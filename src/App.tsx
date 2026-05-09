@@ -18,11 +18,13 @@ import GajiTunjanganIndex from './pages/dashboard/gajitunjangan/GajiTunjanganInd
 import JabatanIndex from './pages/dashboard/jabatan/JabatanIndex';
 import AturGajiJabatan from './pages/dashboard/jabatan/AturGajiJabatan';
 import AddJabatan from './pages/dashboard/jabatan/AddJabatan';
+import Home from './pages/Home';
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/" element={<Home />} />
 
         <Route element={<AuthLayout />}>
           <Route path="/login" element={<Login />} />

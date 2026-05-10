@@ -1,0 +1,13 @@
+# Node modules
+node_modules/
+npm-debug.log*
+
+# Environment Variables (SANGAT PENTING!)
+.env
+
+# Vercel folder
+.vercel/
+
+# OS generated files
+.DS_Store
+Thumbs.db

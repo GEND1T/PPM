@@ -1,6 +1,7 @@
 // File: src/controllers/apiController.js
 
 const supabase = require('../config/supabaseClient');
+const jwt = require('jsonwebtoken');
 
 const updateKerapian = async (req, res) => {
     try {
@@ -279,5 +280,41 @@ const getLiveDashboard = async (req, res) => {
     }
 };
 
-// Pastikan SEMUA fungsi diekspor
-module.exports = { updateKerapian, createSPL, voidAbsensi, getLiveDashboard };
+// ==========================================
+// FITUR BARU: API LOGIN HRD (GENERATE TOKEN)
+// ==========================================
+const loginHRD = async (req, res) => {
+    try {
+        const { username, password } = req.body;
+
+        // Simulasi Autentikasi Sederhana 
+        // Nantinya ini bisa diganti dengan mengecek ke tabel 'users' di Supabase
+        if (username === 'hrd_pusat' && password === 'admin123') {
+            
+            // Buat KTP Digital (Token) yang berlaku selama 8 Jam
+            const token = jwt.sign(
+                { id: 999, role: 'HRD', username: username }, 
+                process.env.JWT_SECRET, 
+                { expiresIn: '8h' }
+            );
+
+            return res.status(200).json({
+                success: true,
+                message: 'Login berhasil.',
+                token: token
+            });
+        }
+
+        return res.status(401).json({
+            success: false,
+            message: 'Username atau Password salah.'
+        });
+
+    } catch (error) {
+        console.error('Error Login:', error.message);
+        return res.status(500).json({ success: false, message: 'Server error.' });
+    }
+};
+
+// Pastikan loginHRD ikut diekspor
+module.exports = { updateKerapian, createSPL, voidAbsensi, getLiveDashboard, loginHRD };

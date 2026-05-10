@@ -38,3 +38,5 @@ app.listen(port, () => {
     console.log(`🚀 Server berjalan di Port: ${port}`);
     console.log(`=================================`);
 });
+
+module.exports = app;

@@ -3,14 +3,25 @@
 const express = require('express');
 const router = express.Router();
 const apiController = require('../controllers/apiController');
+const verifikasiToken = require('../middleware/authMiddleware'); // <--- Import Middleware
 
-// Endpoint untuk diakses PWA Mandor
-router.put('/kerapian', apiController.updateKerapian);
-// Endpoint untuk PWA HRD (Surat Perintah Lembur)
-router.post('/lembur/spl', apiController.createSPL); // <--- Tambahkan baris ini
-// Endpoint Tombol Nuklir (Void Absensi)
-router.put('/absen/void', apiController.voidAbsensi); // <--- Tambahkan baris ini
-// Endpoint Live Dashboard
-router.get('/dashboard/live', apiController.getLiveDashboard); // <--- Tambahkan baris ini
+// Endpoint Terbuka (Siapa saja bisa coba login)
+router.post('/login', apiController.loginHRD);
+
+// Endpoint Terbuka (Dashboard biasanya untuk display di TV kantor, jadi tidak perlu dikunci)
+router.get('/dashboard/live', apiController.getLiveDashboard);
+
+// ==============================================================
+// ZONA AMAN (ENDPOINT DI BAWAH INI WAJIB MEMBAWA TOKEN JWT)
+// ==============================================================
+
+// PWA Mandor (Kerapian)
+router.put('/kerapian', verifikasiToken, apiController.updateKerapian);
+
+// PWA HRD (Surat Perintah Lembur)
+router.post('/lembur/spl', verifikasiToken, apiController.createSPL);
+
+// Tombol Nuklir (Void Absensi)
+router.put('/absen/void', verifikasiToken, apiController.voidAbsensi);
 
 module.exports = router;

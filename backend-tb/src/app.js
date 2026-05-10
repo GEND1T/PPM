@@ -5,6 +5,8 @@ const express = require('express');
 const supabase = require('./config/supabaseClient'); // Memanggil koneksi database
 const { initCronJobs } = require('./cron/dailyTasks'); // Mengimpor cron jobs
 const { initRekapCronJobs } = require('./cron/rekapTasks');
+// const masterRoutes = require('./routes/index');
+// app.use('/api/v1', masterRoutes);
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -19,7 +21,13 @@ const admsRoutes = require('./routes/admsRoutes');
 app.use('/iclock', admsRoutes);      
 // Routing API PWA (Tambahkan 2 baris ini)
 const apiRoutes = require('./routes/apiRoutes');
-app.use('/api', apiRoutes);              
+app.use('/api', apiRoutes);
+
+// ==========================================
+// V1 API ROUTING (Struktur Baru yang Rapi)
+// ==========================================
+const v1Routes = require('./routes/index');
+app.use('/api/v1', v1Routes);           
 
 // Rute Test / Health Check (Untuk memastikan server nyala)
 app.get('/ping', (req, res) => {

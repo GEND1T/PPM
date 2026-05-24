@@ -1,6 +1,6 @@
 import { useEffect } from 'react'; // 1. TAMBAHKAN IMPORT INI
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Award, Banknote } from 'lucide-react';
 import Button from '../../../components/ui/Button';
 import { z } from 'zod';
 
@@ -46,7 +46,6 @@ export default function AturGajiJabatan() {
             UpahLemburperJam: 0,
             BonusDisiplinHarian: 0,
             BonusKerapianHarian: 0,
-            // 3. TAMBAHKAN JUGA 4 BONUS INI AGAR TIDAK ERROR "UNCONTROLLED INPUT"
             BonusFullMingguan6: 0,
             BonusFullMingguan5: 0,
             BonusMingguHarian: 0,
@@ -78,7 +77,7 @@ export default function AturGajiJabatan() {
     };
 
     // 5. FUNGSI UNTUK MERESET (MENGHAPUS) GAJI
-    const handleDeleteGaji = () => {
+    const handleResetGaji = () => {
         const confirmDelete = window.confirm("Yakin ingin menghapus dan mereset semua gaji jabatan ini?");
         if (confirmDelete) {
             reset({
@@ -131,92 +130,104 @@ export default function AturGajiJabatan() {
 
             {/* FORM INPUT GAJI */}
             <div className="bg-white border border-gray-300 rounded-xl shadow-sm">
-                <form onSubmit={handleSubmit(onSubmit)} className="p-6">
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <Input
-                            label="Upah Kehadiran"
-                            nama="upahKehadiran"
-                            type='number'
-                            register={register}
-                            error={errors.upahKehadiran?.message}
-                        />
-                        <Input
-                            label="Upah Lembur per Jam"
-                            nama="UpahLemburperJam"
-                            type='number'
-                            register={register}
-                            error={errors.UpahLemburperJam?.message}
-                        />
-                        <Input
-                            label="Bonus Disiplin Harian"
-                            nama="BonusDisiplinHarian"
-                            type='number'
-                            register={register}
-                            error={errors.BonusDisiplinHarian?.message}
-                        />
-                        <Input
-                            label="Bonus Kerapian Harian"
-                            nama="BonusKerapianHarian"
-                            type='number'
-                            register={register}
-                            error={errors.BonusKerapianHarian?.message}
-                        />
-                        <Input
-                            label="Bonus Full Mingguan 6 hari"
-                            nama="BonusFullMingguan6" // <-- Spasi di depan nama sudah kuhapus
-                            type='number'
-                            register={register}
-                            error={errors.BonusFullMingguan6?.message}
-                        />
-                        <Input
-                            label="Bonus Full Mingguan 5 hari"
-                            nama="BonusFullMingguan5" // <-- Spasi di depan nama sudah kuhapus
-                            type='number'
-                            register={register}
-                            error={errors.BonusFullMingguan5?.message}
-                        />
-                        <Input
-                            label="Bonus Mingguan Harian"
-                            nama="BonusMingguHarian"
-                            type='number'
-                            register={register}
-                            error={errors.BonusMingguHarian?.message}
-                        />
-                        <Input
-                            label="Bonus Lembur Tahunan"
-                            nama="BonusLemburTahunan"
-                            type='number'
-                            register={register}
-                            error={errors.BonusLemburTahunan?.message}
-                        />
-                    </div>
-
-                    {/* 6. PERUBAHAN DI AREA TOMBOL BAWAH */}
-                    <div className="flex justify-between items-center mt-8 pt-5 border-t border-gray-200">
-                        <button 
-                            type="button" 
-                            onClick={handleDeleteGaji}
-                            className="text-red-500 hover:text-red-700 font-medium text-sm flex gap-2 items-center"
-                        >
-                            Hapus Data Gaji
-                        </button>
+                <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-6">
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* GRUP 1: UPAH UTAMA */}
+                    <section className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-4">
+                        <div className="flex items-center gap-2 mb-2 text-green-700 font-bold border-b pb-2">
+                            <Banknote size={20} /> <h2>Upah Dasar & Lembur</h2>
+                        </div>
                         
-                        <div className="flex gap-3">
-                            <Button 
-                                type="button"
-                                variant="secondary" 
-                                label="Batal"
-                                onClick={() => navigate(-1)} 
+                        <Input 
+                            label="Upah Kehadiran (Rp/Hari)" 
+                            nama="upahKehadiran" 
+                            type="number" 
+                            placeholder="Masukkan upah kehadiran"
+                            register={register} 
+                            error={errors.upahKehadiran?.message} 
+                        />
+                        <Input 
+                            label="Upah Lembur (Rp/Jam)" 
+                            nama="UpahLemburperJam" 
+                            type="number" 
+                            placeholder="Masukkan upah lembur"
+                            register={register} 
+                            error={errors.UpahLemburperJam?.message} 
+                        />
+                         <Input 
+                            label="Bonus Lembur Tahunan (Rp)" 
+                            nama="BonusLemburTahunan" 
+                            type="number" 
+                            placeholder="Masukkan bonus tahunan"
+                            register={register} 
+                            error={errors.BonusLemburTahunan?.message} 
+                        />
+                    </section>
+
+                    {/* GRUP 2: BONUS & REWARD */}
+                    <section className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-4">
+                        <div className="flex items-center gap-2 mb-2 text-yellow-600 font-bold border-b pb-2">
+                            <Award size={20} /> <h2>Bonus Performa</h2>
+                        </div>
+                        
+                        <Input 
+                            label="Bonus Disiplin Harian (Rp)" 
+                            nama="BonusDisiplinHarian" 
+                            type="number" 
+                            placeholder="Masukkan bonus disiplin"
+                            register={register} 
+                        />
+                        <Input 
+                            label="Bonus Kerapian Harian (Rp)" 
+                            nama="BonusKerapianHarian" 
+                            type="number" 
+                            placeholder="Masukkan bonus kerapian"
+                            register={register} 
+                        />
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                            <Input 
+                                label="Bonus Full (5 Hari)" 
+                                nama="BonusFullMingguan5" 
+                                type="number" 
+                                placeholder="Rp"
+                                register={register} 
                             />
-                            <Button 
-                                type="submit" 
-                                label="Simpan Pengaturan" 
+                            <Input 
+                                label="Bonus Full (6 Hari)" 
+                                nama="bonus_mingguan_6_hari" 
+                                type="number" 
+                                placeholder="Rp"
+                                register={register} 
+                            />
+                            <Input 
+                                label="Bonus Harian)" 
+                                nama="BonusMingguHarian" 
+                                type="number" 
+                                placeholder="Rp"
+                                register={register} 
                             />
                         </div>
-                    </div>
+                    </section>
+                </div>
 
-                </form>
+                {/* TOMBOL AKSI */}
+                <div className="flex justify-between items-center bg-white p-5 rounded-xl border border-gray-200 shadow-sm mt-2">
+                    <button 
+                        type="button" 
+                        onClick={handleResetGaji} 
+                        className="text-red-600 font-semibold text-sm hover:underline"
+                    >
+                        Reset Gaji
+                    </button>
+                    <div className="flex gap-3">
+                        <Button type="button" variant="secondary" label="Batal" 
+                            onClick={() => navigate('/dashboard/gaji-tunjangan', { state: { tab: 'master' } })} />
+                        <Button type="submit" label="Simpan Pengaturan" />
+                    </div>
+                </div>
+            </form>
             </div>
         </div>
     );

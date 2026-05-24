@@ -61,7 +61,7 @@ export default function TabelKaryawan({ data: initialData }: TabelKaryawanProps)
         }
     };
 
-    // --- FUNGSI UPDATE DATA KE STATE ---
+        
     const processRowUpdate = (newRow: GridRowModel) => {
         const updatedRow = { ...newRow } as KaryawanItem;
         setRows(rows.map((row) => (row.id === newRow.id ? updatedRow : row)));

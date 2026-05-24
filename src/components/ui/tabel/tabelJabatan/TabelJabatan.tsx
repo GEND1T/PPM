@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+
 import { 
     DataGrid, 
     type GridColDef, 
@@ -8,14 +8,14 @@ import {
     GridActionsCellItem,
     type GridRowId 
 } from '@mui/x-data-grid';
-import { Eye, Pencil, Trash2, Save, X, Coins } from 'lucide-react';
+import {  Pencil, Trash2, Save, X } from 'lucide-react';
 
 interface TabelJabatanProps {
     data: any[];
 }
 
 export default function TabelJabatan({ data: initialData }: TabelJabatanProps) {
-    const navigate = useNavigate();
+    
 
     // 1. STATE MANAGEMENT UNTUK TABEL CRUD
     // Menyimpan data tabel (karena nanti bisa diedit/dihapus secara lokal sebelum ke backend)
@@ -60,16 +60,8 @@ export default function TabelJabatan({ data: initialData }: TabelJabatanProps) {
         }
     };
 
-    // Saat tombol Lihat (Mata) diklik
-    const handleViewEmployees = (id: GridRowId) => () => {
-        // Arahkan ke halaman detail jabatan untuk melihat daftar karyawannya
-        navigate(`/dashboard/jabatan/${id}`); 
-    };
-    // Saat tombol Atur Gaji (Koin) diklik
-    const handleAturGaji = (id: GridRowId) => () => {
-        // Arahkan ke halaman form atur gaji khusus jabatan ini
-        navigate(`/dashboard/jabatan/atur-gaji/${id}`); 
-    };
+    
+
 
     // Fungsi penting yang dijalankan MUI setelah data selesai diedit di tabel
     const processRowUpdate = (newRow: any) => {
@@ -137,18 +129,6 @@ export default function TabelJabatan({ data: initialData }: TabelJabatanProps) {
                 }
 
                 return [
-                    <GridActionsCellItem
-                        icon={<Coins size={18} className="text-yellow-500 hover:text-yellow-700" />}
-                        label="Atur Gaji"
-                        onClick={handleAturGaji(id)}
-                        color="inherit"
-                    />,
-                    <GridActionsCellItem
-                        icon={<Eye size={18} className="text-blue-500 hover:text-blue-700" />}
-                        label="Lihat Karyawan"
-                        onClick={handleViewEmployees(id)} 
-                        color="inherit"
-                    />,
                     <GridActionsCellItem
                         icon={<Pencil size={18} className="text-gray-600 hover:text-black" />}
                         label="Edit"

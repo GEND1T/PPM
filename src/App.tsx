@@ -16,14 +16,17 @@ import DetailDepartemen from './pages/dashboard/departemen/DetailDepartemen';
 import DetailKaryawan from './pages/dashboard/karyawan/DetailKarywan';
 import GajiTunjanganIndex from './pages/dashboard/gajitunjangan/GajiTunjanganIndex';
 import JabatanIndex from './pages/dashboard/jabatan/JabatanIndex';
-import AturGajiJabatan from './pages/dashboard/jabatan/AturGajiJabatan';
+import AturGajiJabatan from './pages/dashboard/gajitunjangan/AturGajiJabatan';
 import AddJabatan from './pages/dashboard/jabatan/AddJabatan';
 import Home from './pages/Home';
+import AddShift from './pages/dashboard/jadwalshift/AddShift';
+import EditShift from './pages/dashboard/jadwalshift/EditShift';
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
+        
         <Route path="/" element={<Home />} />
 
         <Route element={<AuthLayout />}>
@@ -49,17 +52,20 @@ function App() {
 
             <Route path="/dashboard/jabatan" element={<JabatanIndex/>} />
             <Route path="/dashboard/jabatan/tambah-jabatan" element={<AddJabatan />} />
-            <Route path="/dashboard/jabatan/atur-gaji/:id" element={<AturGajiJabatan />} />
+           
 
 
 
             <Route path="/dashboard/jadwal-shift" element={<JadwalShiftIndex />} />
+            <Route path="/dashboard/jadwal-shift/tambah" element={<AddShift />} />
+            <Route path="/dashboard/jadwal-shift/edit/:id" element={<EditShift />} />
 
 
             <Route path="/dashboard/rekap-data" element={<RekapDataIndex />} />
 
 
             <Route path="/dashboard/gaji-tunjangan" element={<GajiTunjanganIndex />} />
+            <Route path="/dashboard/gaji-tunjangan/master-gaji/:id" element={<AturGajiJabatan />} />
 
 
           </Route>

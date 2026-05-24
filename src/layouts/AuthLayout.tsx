@@ -8,9 +8,10 @@ export default function AuthLayout(){
             <div className="bg-gray-100 h-screen flex flex-col items-center justify-center">
                 <img
                     src=""
-                    alt=""
+                    alt="logo/nama team"
                     className='w-96'
                 />
+
             </div>
 
             {/* kanan */}

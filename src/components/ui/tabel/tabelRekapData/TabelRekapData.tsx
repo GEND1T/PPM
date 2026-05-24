@@ -1,6 +1,6 @@
-import { DataGrid, type GridColDef, type GridRowModel, type GridRowModesModel } from "@mui/x-data-grid";
+import { DataGrid, type GridColDef, type GridRowModesModel } from "@mui/x-data-grid";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+
 
 
 export interface RekapItems{
@@ -21,8 +21,8 @@ export interface TabelRekapDataProps{
 export default function TabelRekapData({data: initialData} : TabelRekapDataProps ) {
 
     // State untuk menyimpan data baris dan mode edit dari MUI DataGrid
-    const [rows, setRows] = useState<RekapItems[]>(initialData);
-    const [rowModesModel, setRowModesModel] = useState<GridRowModesModel>({});
+    const [rows] = useState<RekapItems[]>(initialData);
+    const [] = useState<GridRowModesModel>({});
 
     // --- FUNGSI-FUNGSI AKSI ---
 
@@ -40,7 +40,6 @@ export default function TabelRekapData({data: initialData} : TabelRekapDataProps
     //     setRowModesModel(newRowModesModel);
     // };
 
-    const navigate = useNavigate();
 
      // --- DEFINISI KOLOM ---
      const columns : GridColDef[] = [

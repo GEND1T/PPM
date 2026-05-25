@@ -8,6 +8,7 @@ interface ButtonProps {
     isLoading?: boolean;
     className? : string;
     icon? : React.ReactNode;
+    disabled?: boolean;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -17,7 +18,8 @@ export const Button: React.FC<ButtonProps> = ({
     onClick,
     isLoading = false,
     className = "",
-    icon
+    icon,
+
 }) => {
 
     const baseStyle = "flex items-center justify-center font-bold text-sm transition-colors shadow-sm focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed";

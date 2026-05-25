@@ -7,6 +7,7 @@ const verifikasiToken = require('../middleware/authMiddleware'); // <--- Import 
 
 // Endpoint Terbuka (Siapa saja bisa coba login)
 router.post('/login', apiController.loginHRD);
+router.post('/register', verifikasiToken,apiController.registerAdmin);
 
 // Endpoint Terbuka (Dashboard biasanya untuk display di TV kantor, jadi tidak perlu dikunci)
 router.get('/dashboard/live', apiController.getLiveDashboard);
@@ -23,5 +24,6 @@ router.post('/lembur/spl', verifikasiToken, apiController.createSPL);
 
 // Tombol Nuklir (Void Absensi)
 router.put('/absen/void', verifikasiToken, apiController.voidAbsensi);
+
 
 module.exports = router;

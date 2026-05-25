@@ -2,6 +2,7 @@
 
 const supabase = require('../config/supabaseClient');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 
 const updateKerapian = async (req, res) => {
     try {
@@ -281,40 +282,77 @@ const getLiveDashboard = async (req, res) => {
 };
 
 // ==========================================
-// FITUR BARU: API LOGIN HRD (GENERATE TOKEN)
+// FITUR BARU 1: API LOGIN HRD (ASLI DATABASE)
 // ==========================================
 const loginHRD = async (req, res) => {
     try {
         const { username, password } = req.body;
 
-        // Simulasi Autentikasi Sederhana 
-        // Nantinya ini bisa diganti dengan mengecek ke tabel 'users' di Supabase
-        if (username === 'hrd_pusat' && password === 'admin123') {
-            
-            // Buat KTP Digital (Token) yang berlaku selama 8 Jam
-            const token = jwt.sign(
-                { id: 999, role: 'HRD', username: username }, 
-                process.env.JWT_SECRET, 
-                { expiresIn: '8h' }
-            );
+        // 1. Cari user di Supabase berdasarkan username
+        const { data: user, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('username', username)
+            .single();
 
-            return res.status(200).json({
-                success: true,
-                message: 'Login berhasil.',
-                token: token
-            });
+        // Jika error atau user tidak ditemukan
+        if (error || !user) {
+            return res.status(401).json({ success: false, message: 'Username tidak ditemukan.' });
         }
 
-        return res.status(401).json({
-            success: false,
-            message: 'Username atau Password salah.'
+        // 2. Bandingkan password yang diketik dengan hash di database
+        const isPasswordMatch = await bcrypt.compare(password, user.password_hash);
+
+        if (!isPasswordMatch) {
+            return res.status(401).json({ success: false, message: 'Password salah.' });
+        }
+
+        // 3. Jika cocok, buatkan Token JWT
+        const token = jwt.sign(
+            { id: user.id, role: user.role, username: user.username }, 
+            process.env.JWT_SECRET, 
+            { expiresIn: '8h' }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: 'Login berhasil.',
+            token: token,
+            role: user.role // Kirim role ke frontend jika sewaktu-waktu dibutuhkan
         });
 
     } catch (error) {
         console.error('Error Login:', error.message);
-        return res.status(500).json({ success: false, message: 'Server error.' });
+        return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada server.' });
     }
 };
 
-// Pastikan loginHRD ikut diekspor
-module.exports = { updateKerapian, createSPL, voidAbsensi, getLiveDashboard, loginHRD };
+// ==========================================
+// FITUR BARU 2: REGISTER AKUN PERTAMA (Bisa dihapus nanti)
+// ==========================================
+const registerAdmin = async (req, res) => {
+    try {
+        const { username, password, role } = req.body;
+
+        // Acak password dengan tingkat kerumitan (salt) 10
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        // Simpan ke Supabase
+        const { data, error } = await supabase
+            .from('users')
+            .insert([{ username, password_hash: hashedPassword, role: role || 'HRD' }])
+            .select('id, username, role') // Jangan me-return password_hash
+            .single();
+
+        if (error) throw error;
+
+        return res.status(201).json({ success: true, message: 'Akun berhasil dibuat!', data });
+    } catch (error) {
+        console.error('Error Register:', error.message);
+        return res.status(500).json({ success: false, message: 'Gagal membuat akun. Username mungkin sudah dipakai.' });
+    }
+};
+
+// Pastikan registerAdmin ikut diekspor
+module.exports = { updateKerapian, createSPL, voidAbsensi, getLiveDashboard, loginHRD, registerAdmin };

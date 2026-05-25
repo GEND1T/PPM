@@ -2,6 +2,7 @@
 
 require('dotenv').config();
 const express = require('express');
+const cors = require('cors');   
 const supabase = require('./config/supabaseClient'); // Memanggil koneksi database
 const { initCronJobs } = require('./cron/dailyTasks'); // Mengimpor cron jobs
 const { initRekapCronJobs } = require('./cron/rekapTasks');
@@ -15,6 +16,7 @@ const port = process.env.PORT || 3000;
 app.use(express.json()); 
 app.use(express.text()); // Sangat penting untuk menerima data mentah dari mesin ADMS
 app.use(express.urlencoded({ extended: true }));
+app.use(cors());
 
 // Routing ADMS
 const admsRoutes = require('./routes/admsRoutes'); 

@@ -8,11 +8,14 @@ const verifikasiToken = require('../middleware/authMiddleware');
 
 // Import semua rute spesifik (Nantinya Jabatan, Pegawai, dll ditambahkan di sini)
 const departemenRoutes = require('./master/departemenRoutes');
-const jabatanRoutes = require('./master/jabatanRoutes'); // <--- Tambahkan import ini
-
+const jabatanRoutes = require('./master/jabatanRoutes');
+const shiftRoutes = require('./master/shiftRoutes');
+const pegawaiRoutes = require('./master/pegawaiRoutes');
 // Daftarkan rute dan pasang gembok JWT secara global untuk rute ini
 // Artinya semua aksi CRUD departemen butuh token HRD
 router.use('/departemen', verifikasiToken, departemenRoutes);
 router.use('/jabatan', verifikasiToken, jabatanRoutes);
+router.use('/shifts', verifikasiToken, shiftRoutes);
+router.use('/pegawai', verifikasiToken, pegawaiRoutes);
 
 module.exports = router;

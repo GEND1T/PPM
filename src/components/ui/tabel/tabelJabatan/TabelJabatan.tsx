@@ -1,26 +1,44 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
-import { 
-    DataGrid, 
-    type GridColDef, 
-    type GridRowModesModel, 
-    GridRowModes, 
+import {
+    DataGrid,
+    type GridColDef,
+    type GridRowModesModel,
+    GridRowModes,
     GridActionsCellItem,
-    type GridRowId 
+    type GridRowId
 } from '@mui/x-data-grid';
-import {  Pencil, Trash2, Save, X } from 'lucide-react';
+import { Pencil, Trash2, Save, X } from 'lucide-react';
 
 interface TabelJabatanProps {
     data: any[];
 }
 
 export default function TabelJabatan({ data: initialData }: TabelJabatanProps) {
+    const [departemenOptions, setDepartemenOptions] = useState<string[]>([]);
     
+
+    useEffect(() => {
+        const fetchDepartemen = async () => {
+            try {
+                const response = await fetch("http://localhost:3000/api/v1/departemen"); // Sesuaikan endpoint-nya
+                const result = await response.json();
+                // Asumsi result.data berbentuk array objek: [{id: 1, nama_departemen: 'Produksi'}, ...]
+                const names = result.data.map((dept: any) => dept.nama_departemen);
+                setDepartemenOptions(names);
+            } catch (error) {
+                console.error("Gagal ambil opsi departemen:", error);
+            }
+        };
+        fetchDepartemen();
+    }, []);
+
 
     // 1. STATE MANAGEMENT UNTUK TABEL CRUD
     // Menyimpan data tabel (karena nanti bisa diedit/dihapus secara lokal sebelum ke backend)
     const [rows, setRows] = useState(initialData);
-    
+    const [departemenList] = useState(initialData);
+
     // Menyimpan status baris mana saja yang sedang dalam mode "Edit"
     const [rowModesModel, setRowModesModel] = useState<GridRowModesModel>({});
 
@@ -32,10 +50,38 @@ export default function TabelJabatan({ data: initialData }: TabelJabatanProps) {
     };
 
     // Saat tombol Save (Centang/Simpan) diklik
-    const handleSaveClick = (id: GridRowId) => () => {
-        setRowModesModel({ ...rowModesModel, [id]: { mode: GridRowModes.View } });
-        // NOTE: Di sini nantinya kamu akan memanggil API Backend (Axios/Fetch) 
-        // untuk meng-update data di database MySQL kamu.
+    const handleSaveClick = (id: GridRowId) => async () => {
+        // Cari data yang sudah diupdate dari state 'rows'
+        const updatedRow = rows.find((row) => row.id === id);
+
+        const selectedDept = departemenList.find(d => d.nama === updatedRow?.departemen);
+
+
+        try {
+            const response = await fetch(`http://localhost:3000/api/v1/jabatan/${id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    nama_jabatan: updatedRow?.nama_jabatan,
+                // UBAH JADI departemen_id DAN KIRIM ID-NYA
+                    departemen_id: selectedDept?.id
+                }),
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.message || "Gagal menyimpan ke database");
+            }
+
+            // Jika berhasil, tutup mode edit
+            setRowModesModel({ ...rowModesModel, [id]: { mode: GridRowModes.View } });
+            alert("Data berhasil diupdate!");
+        } catch (error) {
+            console.error("Update Error:", error);
+            alert("Gagal mengupdate data. Cek terminal backend untuk detail error.");
+        }
     };
 
     // Saat tombol Cancel (Silang) diklik
@@ -53,15 +99,22 @@ export default function TabelJabatan({ data: initialData }: TabelJabatanProps) {
     };
 
     // Saat tombol Delete (Tong Sampah) diklik
-    const handleDeleteClick = (id: GridRowId) => () => {
-        if(window.confirm("Apakah Anda yakin ingin menghapus jabatan ini?")) {
-            setRows(rows.filter((row) => row.id !== id));
-            // NOTE: Di sini nantinya kamu akan memanggil API Backend DELETE
+    const handleDeleteClick = (id: GridRowId) => async () => {
+        if (window.confirm("Apakah Anda yakin ingin menghapus jabatan ini?")) {
+            try {
+                const response = await fetch(`http://localhost:3000/api/v1/jabatan/${id}`, {
+                    method: 'DELETE',
+                });
+
+                if (!response.ok) throw new Error("Gagal menghapus data");
+
+                // Update UI lokal
+                setRows(rows.filter((row) => row.id !== id));
+            } catch (error) {
+                alert("Gagal menghapus data.");
+            }
         }
     };
-
-    
-
 
     // Fungsi penting yang dijalankan MUI setelah data selesai diedit di tabel
     const processRowUpdate = (newRow: any) => {
@@ -73,32 +126,39 @@ export default function TabelJabatan({ data: initialData }: TabelJabatanProps) {
 
     // --- 3. DEFINISI KOLOM ---
     const columns: GridColDef[] = [
-        { 
-            field: 'nama_jabatan', 
-            headerName: 'Nama Jabatan', 
-            flex: 1, 
+        {
+            field: 'nama_jabatan',
+            headerName: 'Nama Jabatan',
+            flex: 1,
             minWidth: 180,
-            editable: true, // Beri tahu MUI bahwa kolom ini bisa diedit!
+            editable: true,
             renderCell: (params) => (
                 <span className="font-medium text-gray-800">{params.value}</span>
             )
         },
-        { 
-            field: 'departemen', 
-            headerName: 'Departemen', 
-            flex: 1, 
+        {
+            field: 'departemen',
+            headerName: 'Departemen',
+            flex: 1,
             minWidth: 150,
-            editable: true, // Bisa diedit (Idealnya ini pakai tipe 'singleSelect' dropdown)
-            
+            editable: true,
+            type: 'singleSelect',
+            // Sekarang datanya dinamis!
+            valueOptions: departemenOptions,
+            renderCell: (params) => (
+                <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-semibold">
+                    {params.value}
+                </span>
+            )
         },
-        { 
-            field: 'jumlah_karyawan', 
-            headerName: 'Jumlah Karyawan', 
-            flex: 1, 
+        {
+            field: 'jumlah_karyawan',
+            headerName: 'Jumlah Karyawan',
+            flex: 1,
             minWidth: 150,
             align: 'center',
             headerAlign: 'center',
-            editable: false, // Biasanya jumlah karyawan tidak bisa diedit manual, otomatis dari sistem
+            editable: false,
             renderCell: (params) => (
                 <span>{params.value} Orang</span>
             )
@@ -152,7 +212,7 @@ export default function TabelJabatan({ data: initialData }: TabelJabatanProps) {
             rows={rows} // Gunakan state `rows`, JANGAN `data` dari props
             columns={columns}
             showToolbar
-            
+
             // Pengaturan CRUD Inline Editing
             editMode="row"
             rowModesModel={rowModesModel}
@@ -165,7 +225,7 @@ export default function TabelJabatan({ data: initialData }: TabelJabatanProps) {
             pageSizeOptions={[5, 10]}
             disableRowSelectionOnClick
             sx={{
-                border: 'none', 
+                border: 'none',
                 '& .MuiDataGrid-columnHeaders': {
                     backgroundColor: '#f9fafb',
                     color: 'black',

@@ -27,14 +27,44 @@ export default function AddJabatan() {
         resolver: zodResolver(schema),
     });
 
-    // 2. Fungsi saat tombol Simpan diklik
-    const onSubmit: SubmitHandler<FormValues> = (data) => {
-        console.log("Data Jabatan Baru siap dikirim:", data);
-        alert("Jabatan berhasil ditambahkan!");
+    
 
-        // Nanti taruh fungsi Axios.post() di sini
-        // Setelah berhasil, arahkan kembali ke halaman tabel jabatan
-        navigate('/dashboard/jabatan');
+    // 2. Fungsi saat tombol Simpan diklik
+   const onSubmit: SubmitHandler<FormValues> = async (data) => {
+        try {
+            // Karena backend digembok 'verifikasiToken', kita kirim token dummy sementara
+            // Jika token ini ditolak, berarti backend mewajibkan token JWT asli dari proses Login
+            const token = localStorage.getItem('token') || "TOKEN_DUMMY_SEMENTARA";
+
+            const response = await fetch("http://localhost:3000/api/v1/jabatan", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}` // Membawa "Tiket" untuk masuk ke backend
+                },
+                body: JSON.stringify({
+                    nama_jabatan: data.nama_jabatan,
+                    // Kita ubah jadi Number agar sesuai dengan format ID di database
+                    departemen_id: Number(data.departemen_id) 
+                }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => null);
+                if (response.status === 401) throw new Error("Akses ditolak! Token tidak valid.");
+                throw new Error(errorData?.message || "Gagal menambahkan Jabatan");
+            }
+
+            const result = await response.json();
+            console.log("Berhasil disimpan ke Database:", result);
+
+            alert("Jabatan berhasil ditambahkan! 🎉");
+            navigate('/dashboard/jabatan');
+
+        } catch (error: any) {
+            console.error("CREATE JABATAN ERROR!:", error);
+            alert(error.message || "Gagal terhubung ke server.");
+        }
     };
 
     // Data dummy departemen (Nanti kamu fetch dari API/Database)

@@ -6,21 +6,24 @@ import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import { Input } from "../components/ui/InputText";
 import { InputPassword } from "../components/ui/InputPassword";
+import { useState } from "react";
 
-
+// 1. Ubah email menjadi username agar sesuai dengan backend
 type FormData = {
-    email: string;
+    username: string;
     password: string;
 }
 
+// 2. Sesuaikan validasi Zod
 const schema = z.object({
-    email: z.string().min(1, "Email harus diisi"),
-    password: z.string().min(8, "Password harus diisi"),
+    username: z.string().min(1, "Username harus diisi"),
+    password: z.string().min(6, "Password minimal 6 karakter"),
 })
 
 export default function Login(){
     const navigate = useNavigate();
     const login = useAuthStore((state) => state.login);
+    const [isLoading, setIsLoading] = useState(false); // State untuk loading button
     const { 
         register, 
         handleSubmit, 
@@ -30,30 +33,54 @@ export default function Login(){
      });
  
     
-    
-    const onSubmit = (data: FormData) => {
-        console.log(data);
-        if(data.email == "admin@gmail.com" && data.password == "admin123" ){
-            alert("Login berhasil");
+    // 3. Fungsi Submit ke Backend Vercel
+    const onSubmit = async (data: FormData) => {
+        setIsLoading(true);
+        try {
+            // Tembak API Login yang ada di backend
+            const response = await fetch("https://ppmtestingvercel.vercel.app/api/login", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    username: data.username,
+                    password: data.password
+                }),
+            });
 
-            login(data.email)
+            const result = await response.json();
 
-            navigate("/dashboard");
-        }else{
-            alert("Email & Password salah");
+            // Jika status 200 OK dan dari backend mengirim success: true
+            if (response.ok && result.success) {
+                // Simpan token JWT ke Zustand (dan LocalStorage)
+                login(data.username, result.token);
+                
+                alert("Login berhasil!");
+                navigate("/dashboard");
+            } else {
+                // Tampilkan pesan error dari backend (misal: "Username salah")
+                alert(result.message || "Login gagal, periksa kembali data Anda.");
+            }
+
+        } catch (error) {
+            console.error("Error saat login:", error);
+            alert("Terjadi kesalahan saat login. Silakan coba lagi.");
+        } finally {
+            setIsLoading(false);
         }
-        
-        
     };
+        
 
     return (
         <div>
             <form onSubmit={handleSubmit(onSubmit)}>
+                {/* 4. Ubah input UI menjadi username */}
                 <Input
-                    label="Email"
-                    nama="email"
+                    label="Username"
+                    nama="username"
                     register={register}
-                    error={errors.email?.message}
+                    error={errors.username?.message}
                 />
 
                 <InputPassword
@@ -62,8 +89,14 @@ export default function Login(){
                     register={register}
                     error={errors.password?.message} 
                 />
+
                 <div>
-                    <Button type="submit" label="Login" />
+                    {/* Tampilkan status loading di tombol */}
+                    <Button 
+                        type="submit" 
+                        label={isLoading ? "Memproses..." : "Login"} 
+                        disabled={isLoading} 
+                    />
                 </div>
             </form>
         </div>

@@ -215,6 +215,16 @@ const getLiveDashboard = async (req, res) => {
 
         if (errAbsen) throw errAbsen;
 
+        // ==========================================
+        // FITUR BARU: 2.5 Tarik Otorisasi Lembur HARI INI
+        // ==========================================
+        const { data: lemburHariIni, error: errLembur } = await supabase
+            .from('otorisasi_lembur') // <-- Sesuaikan jika nama tabelmu berbeda
+            .select('pegawai_id, menit_diizinkan') // <-- Sesuaikan nama kolom menitnya
+            .eq('tanggal', today);
+            
+        if (errLembur) throw errLembur;
+
         // Variabel untuk menghitung statistik Dashboard
         let totalPegawai = listPegawai.length;
         let totalHadirTepatWaktu = 0;
@@ -224,41 +234,55 @@ const getLiveDashboard = async (req, res) => {
 
         // 3. Gabungkan data (Mapping)
         const hasilDashboard = listPegawai.map(pegawai => {
-            // Cari apakah pegawai ini ada di tabel absen hari ini
+            // Cari apakah pegawai ini ada di tabel absen & lembur hari ini
             const absen = absenHariIni.find(a => a.pegawai_id === pegawai.id);
+            const lembur = lemburHariIni.find(l => l.pegawai_id === pegawai.id);
 
             let statusHariIni = 'belum_hadir';
             let jamMasuk = '-';
             let jamPulang = '-';
+            let statusLembur = '-'; // Default jika tidak ada izin lembur
+
+            // Jika ada data lembur, ubah "-" menjadi jumlah menit
+            if (lembur && lembur.menit_diizinkan) {
+                statusLembur = `${lembur.menit_diizinkan} Menit`;
+            }
 
             if (absen) {
-                statusHariIni = absen.status;
+                // Di sini bisa disesuaikan apakah 'intime' jadi 'Tepat', dll.
+                // Sesuai frontend kamu: "Tepat", "Terlambat", "Void"
+                if (absen.status === 'intime' || absen.status === 'ontime') {
+                    statusHariIni = 'Tepat';
+                    totalHadirTepatWaktu++;
+                } else if (absen.status === 'late') {
+                    statusHariIni = 'Terlambat';
+                    totalTerlambat++;
+                } else if (absen.status === 'void') {
+                    statusHariIni = 'Void';
+                    totalVoid++;
+                } else {
+                    statusHariIni = absen.status; // Fallback
+                }
+
                 jamMasuk = absen.waktu_awal || '-';
                 jamPulang = absen.waktu_akhir || '-';
-
-                // Hitung statistik
-                if (statusHariIni === 'intime' || statusHariIni === 'ontime') {
-                    totalHadirTepatWaktu++;
-                } else if (statusHariIni === 'late') {
-                    totalTerlambat++;
-                } else if (statusHariIni === 'void') {
-                    totalVoid++;
-                }
             } else {
                 totalBelumHadir++;
             }
 
+            // Return keys disamakan 100% dengan GridColDef di Frontend
             return {
-                id_pegawai: pegawai.id,
+                id: pegawai.id, // MUI DataGrid sangat butuh key 'id'
                 nama: pegawai.nama,
                 jabatan: pegawai.jabatan ? pegawai.jabatan.nama_jabatan : 'Tidak Diketahui',
-                jam_masuk: jamMasuk,
-                jam_pulang: jamPulang,
-                status: statusHariIni
+                waktu_masuk: jamMasuk,
+                waktu_pulang: jamPulang,
+                status_masuk: statusHariIni,
+                status_lembur: statusLembur // Akan berisi misal "120 Menit" atau "-"
             };
         });
 
-        // 4. Kirim respons JSON ke PWA
+        // 4. Kirim respons JSON ke Frontend
         return res.status(200).json({
             success: true,
             tanggal: today,
@@ -269,7 +293,7 @@ const getLiveDashboard = async (req, res) => {
                 belum_hadir: totalBelumHadir,
                 dibatalkan_void: totalVoid
             },
-            data_karyawan: hasilDashboard
+            data_karyawan: hasilDashboard // Ini nanti diambil dari res.data_karyawan
         });
 
     } catch (error) {

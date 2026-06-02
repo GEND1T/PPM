@@ -220,7 +220,7 @@ const getLiveDashboard = async (req, res) => {
         // ==========================================
         const { data: lemburHariIni, error: errLembur } = await supabase
             .from('otorisasi_lembur') // <-- Sesuaikan jika nama tabelmu berbeda
-            .select('pegawai_id, menit_diizinkan') // <-- Sesuaikan nama kolom menitnya
+            .select('pegawai_id, menit_lembur_diizinkan') // <-- Sesuaikan nama kolom menitnya
             .eq('tanggal', today);
             
         if (errLembur) throw errLembur;
@@ -244,8 +244,8 @@ const getLiveDashboard = async (req, res) => {
             let statusLembur = '-'; // Default jika tidak ada izin lembur
 
             // Jika ada data lembur, ubah "-" menjadi jumlah menit
-            if (lembur && lembur.menit_diizinkan) {
-                statusLembur = `${lembur.menit_diizinkan} Menit`;
+            if (lembur && lembur.menit_lembur_diizinkan) {
+                statusLembur = `${lembur.menit_lembur_diizinkan} Menit`;
             }
 
             if (absen) {

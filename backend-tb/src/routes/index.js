@@ -13,9 +13,9 @@ const shiftRoutes = require('./master/shiftRoutes');
 const pegawaiRoutes = require('./master/pegawaiRoutes');
 // Daftarkan rute dan pasang gembok JWT secara global untuk rute ini
 // Artinya semua aksi CRUD departemen butuh token HRD
-router.use('/departemen', verifikasiToken, departemenRoutes);
-router.use('/jabatan', verifikasiToken, jabatanRoutes);
-router.use('/shifts', verifikasiToken, shiftRoutes);
-router.use('/pegawai', verifikasiToken, pegawaiRoutes);
+router.use('/departemen', departemenRoutes);
+router.use('/jabatan', jabatanRoutes);
+router.use('/shifts',  shiftRoutes);
+router.use('/pegawai',  pegawaiRoutes);
 
 module.exports = router;

@@ -2,11 +2,14 @@
 
 const supabase = require('../../config/supabaseClient');
 
+// File: src/controllers/master/pegawaiController.js
+
 // 1. CREATE: Tambah Pegawai Baru
 const createPegawai = async (req, res) => {
     try {
         const {
-            nama, pin_mesin, jabatan_id, default_shift_id, tanggal_bergabung
+            nama, pin_mesin, jabatan_id, default_shift_id, tanggal_bergabung,
+            nik, bpjs, jenis_kelamin, alamat, tempat_lahir, tanggal_lahir, no_hp, email // <--- Tambahan variabel baru
         } = req.body;
 
         if (!nama || !pin_mesin) {
@@ -17,18 +20,24 @@ const createPegawai = async (req, res) => {
             .from('pegawai')
             .insert([{
                 nama, pin_mesin, jabatan_id, default_shift_id, 
-                // Jika tanggal_bergabung tidak dikirim dari PWA, biarkan undefined agar Supabase memakai default CURRENT_DATE
-                ...(tanggal_bergabung && { tanggal_bergabung }) 
+                nik, bpjs, jenis_kelamin, alamat, tempat_lahir, tanggal_lahir, no_hp, email, // <--- Masukkan ke database
+                ...(tanggal_bergabung && { tanggal_bergabung })
             }])
             .select()
             .single();
 
-        if (error) throw error;
+        if (error) {
+            // Penanganan error khusus jika NIK atau Email sudah terdaftar
+            if (error.code === '23505') { 
+                return res.status(400).json({ success: false, message: 'Gagal! NIK, Email, atau PIN Mesin sudah digunakan.' });
+            }
+            throw error;
+        }
 
         return res.status(201).json({ success: true, message: 'Pegawai berhasil ditambahkan.', data });
     } catch (error) {
         console.error('Error createPegawai:', error.message);
-        return res.status(500).json({ success: false, message: 'Gagal menambah pegawai. Pastikan PIN Mesin unik.' });
+        return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada server.' });
     }
 };
 

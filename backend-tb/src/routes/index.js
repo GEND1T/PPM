@@ -20,7 +20,7 @@ router.use('/departemen', verifikasiToken, departemenRoutes);
 router.use('/jabatan', verifikasiToken, jabatanRoutes);
 router.use('/shifts', verifikasiToken, shiftRoutes);
 router.use('/pegawai', verifikasiToken, pegawaiRoutes);
-router.use('/absens', verifikasiToken, absenRoutes);
+router.use('/absen', verifikasiToken, absenRoutes);
 router.use('/gaji', verifikasiToken, gajiRoutes);
 
 module.exports = router;

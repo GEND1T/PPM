@@ -210,7 +210,7 @@ const getLiveDashboard = async (req, res) => {
         // 2. Tarik semua data absensi HARI INI
         const { data: absenHariIni, error: errAbsen } = await supabase
             .from('absensi')
-            .select('pegawai_id, waktu_awal, waktu_akhir, status')
+            .select('pegawai_id, waktu_awal, waktu_akhir, status, is_kerapian') // Pastikan kolom is_kerapian sudah ada di tabel absensi
             .eq('tanggal', today);
 
         if (errAbsen) throw errAbsen;

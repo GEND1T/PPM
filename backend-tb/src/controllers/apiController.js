@@ -238,7 +238,7 @@ const getLiveDashboard = async (req, res) => {
             const absen = absenHariIni.find(a => a.pegawai_id === pegawai.id);
             const lembur = lemburHariIni.find(l => l.pegawai_id === pegawai.id);
 
-            let statusHariIni = 'belum_hadir';
+            let statusHariIni = 'Belum Hadir';
             let jamMasuk = '-';
             let jamPulang = '-';
             let statusLembur = '-'; // Default jika tidak ada izin lembur
@@ -257,15 +257,19 @@ const getLiveDashboard = async (req, res) => {
                 // Di sini bisa disesuaikan apakah 'intime' jadi 'Tepat', dll.
                 // Sesuai frontend kamu: "Tepat", "Terlambat", "Void"
                 if (absen.status === 'intime' || absen.status === 'ontime') {
-                    statusHariIni = 'Tepat';
+                    statusHariIni = 'Tepat Waktu';
                     totalHadirTepatWaktu++;
                 } else if (absen.status === 'late') {
                     statusHariIni = 'Terlambat';
                     totalTerlambat++;
                 } else if (absen.status === 'void') {
-                    statusHariIni = 'Void';
+                    statusHariIni = 'Absensi di Batalkan';
                     totalVoid++;
-                } else {
+                } else if (absen.status === 'pulang_awal') {
+                    statusHariIni = 'Pulang Awal';
+                } else if (absen.status === 'lupa_pulang') {
+                    statusHariIni = 'Tidak Scan Pulang';
+                }else {
                     statusHariIni = absen.status; // Fallback
                 }
 
@@ -285,6 +289,7 @@ const getLiveDashboard = async (req, res) => {
                 status_masuk: statusHariIni,
                 status_lembur: statusLembur, // Akan berisi misal "120 Menit" atau "-"
                 is_kerapian: absen ? absen.is_kerapian : false // Asumsi kolom is_kerapian sudah ada di tabel absensi
+                
 
             };
         });

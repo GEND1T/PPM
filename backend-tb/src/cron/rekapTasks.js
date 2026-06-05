@@ -135,7 +135,7 @@ async function prosesRekapMingguan() {
 function initRekapCronJobs() {
     // Format Cron: Menit Jam Tanggal Bulan Hari (0 = Minggu, 6 = Sabtu)
     // Berjalan setiap Sabtu jam 23:00
-    cron.schedule('* 23 * * *', () => {
+    cron.schedule('* 23 * * 6', () => {
         prosesRekapMingguan();
     });
     console.log('⏱️  Cron Jobs Rekap Mingguan (Sabtu 23:00) berhasil diinisialisasi.');

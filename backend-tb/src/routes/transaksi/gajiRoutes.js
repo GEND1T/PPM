@@ -7,6 +7,7 @@ const gajiController = require('../../controllers/transaksi/gajiController');
 router.get('/', gajiController.getAllGaji);
 router.get('/mingguan', gajiController.getRekapMingguan);
 router.post('/generate', gajiController.generateGaji);
+router.get('/harian', gajiController.getRekapHarian);
 
 
 module.exports = router;

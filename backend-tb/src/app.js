@@ -32,7 +32,7 @@ const v1Routes = require('./routes/index');
 app.use('/api/v1', v1Routes);           
 
 // Rute Test / Health Check (Untuk memastikan server nyala)
-app.get('/ping', (req, res) => {
+app.get('/', (req, res) => {
     res.json({ message: 'Pong! Backend Absensi ADMS Berjalan Lancar 🚀' });
 });
 

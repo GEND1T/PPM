@@ -10,7 +10,7 @@ const getAllGaji = async (req, res) => {
                 gaji_dasar, total_bonus, total_potongan, total_gaji, status_pembayaran,
                 pegawai (nama, jabatan (nama_jabatan))
             `)
-            .order('periode_tahun', { ascending: false })
+            .order('period  e_tahun', { ascending: false })
             .order('periode_bulan', { ascending: false });
 
         if (error) throw error;
@@ -127,4 +127,27 @@ const generateGaji = async (req, res) => {
     }
 };
 
-module.exports = { getAllGaji, generateGaji };
+// GET: Ambil Rekap Mingguan
+const getRekapMingguan = async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('rekap_mingguan')
+            .select(`
+                id, tanggal_mulai, tanggal_akhir, 
+                total_hari_hadir, total_gaji_pokok_mingguan, 
+                total_bonus_kerapian_mingguan, total_bonus_disiplin_mingguan, 
+                total_denda_mingguan, total_pendapatan_bersih_mingguan,
+                pegawai (nama, jabatan (nama_jabatan))
+            `)
+            .order('tanggal_akhir', { ascending: false });
+
+        if (error) throw error;
+
+        return res.status(200).json({ success: true, data });
+    } catch (error) {
+        console.error('Error getRekapMingguan:', error.message);
+        return res.status(500).json({ success: false, message: 'Gagal mengambil rekap mingguan' });
+    }
+};
+
+module.exports = { getAllGaji, generateGaji, getRekapMingguan };

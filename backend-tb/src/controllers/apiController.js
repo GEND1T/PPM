@@ -13,7 +13,7 @@ const updateKerapian = async (req, res) => {
         if (!pegawai_id || !tanggal || typeof is_kerapian === 'undefined') {
             return res.status(400).json({ 
                 success: false, 
-                message: 'Data tidak lengkap. Butuh pegawai_id, tanggal, dan is_kerapian.' 
+                message: 'Data tidak lengkap' 
             });
         }
 
@@ -242,6 +242,7 @@ const getLiveDashboard = async (req, res) => {
             let jamMasuk = '-';
             let jamPulang = '-';
             let statusLembur = '-'; // Default jika tidak ada izin lembur
+            let is_kerapian = false; // Default jika tidak ada data kerapian
 
             // Jika ada data lembur, ubah "-" menjadi jumlah menit
             if (lembur && lembur.menit_lembur_diizinkan) {
@@ -278,7 +279,9 @@ const getLiveDashboard = async (req, res) => {
                 waktu_masuk: jamMasuk,
                 waktu_pulang: jamPulang,
                 status_masuk: statusHariIni,
-                status_lembur: statusLembur // Akan berisi misal "120 Menit" atau "-"
+                status_lembur: statusLembur, // Akan berisi misal "120 Menit" atau "-"
+                is_kerapian: absen ? absen.is_kerapian : false // Asumsi kolom is_kerapian sudah ada di tabel absensi
+
             };
         });
 

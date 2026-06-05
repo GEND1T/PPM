@@ -1,5 +1,4 @@
 // File: src/routes/index.js
-
 const express = require('express');
 const router = express.Router();
 
@@ -11,11 +10,17 @@ const departemenRoutes = require('./master/departemenRoutes');
 const jabatanRoutes = require('./master/jabatanRoutes');
 const shiftRoutes = require('./master/shiftRoutes');
 const pegawaiRoutes = require('./master/pegawaiRoutes');
+const absenRoutes = require('./transaksi/absenRoutes');
+const gajiRoutes = require('./transaksi/gajiRoutes');
+
+
 // Daftarkan rute dan pasang gembok JWT secara global untuk rute ini
 // Artinya semua aksi CRUD departemen butuh token HRD
 router.use('/departemen', verifikasiToken, departemenRoutes);
 router.use('/jabatan', verifikasiToken, jabatanRoutes);
 router.use('/shifts', verifikasiToken, shiftRoutes);
 router.use('/pegawai', verifikasiToken, pegawaiRoutes);
+router.use('/absens', verifikasiToken, absenRoutes);
+router.use('/gaji', verifikasiToken, gajiRoutes);
 
 module.exports = router;

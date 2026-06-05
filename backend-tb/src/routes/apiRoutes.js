@@ -4,8 +4,8 @@ const express = require('express');
 const router = express.Router();
 const apiController = require('../controllers/apiController');
 const verifikasiToken = require('../middleware/authMiddleware');
-const absenController = require('../controllers/absenController');
-const gajiController = require('../controllers/gajiController');
+const absenController = require('../controllers/transaksi/absenController');
+const gajiController = require('../controllers/transaksi/gajiController');
 
 // Endpoint Terbuka (Siapa saja bisa coba login)
 router.post('/login', apiController.loginHRD);

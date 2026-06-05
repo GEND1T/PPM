@@ -1,4 +1,4 @@
-const supabase = require('../config/supabaseClient');
+const supabase = require('../../config/supabaseClient');
 
 // 1. GET: Ambil semua data absensi (Bisa difilter per rentang tanggal nantinya)
 const getAllAbsen = async (req, res) => {

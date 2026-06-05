@@ -1,4 +1,4 @@
-const supabase = require('../config/supabaseClient');
+const supabase = require('../../config/supabaseClient');
 
 // 1. GET: Ambil daftar riwayat penggajian (Sudah disesuaikan untuk format Frontend)
 const getAllGaji = async (req, res) => {

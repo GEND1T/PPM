@@ -3,44 +3,39 @@ const supabase = require('../../config/supabaseClient');
 // 1. GET: Ambil daftar riwayat penggajian (Sudah disesuaikan untuk format Frontend)
 const getAllGaji = async (req, res) => {
     try {
-        const hariIni = new Date().toLocaleDateString('sv-SE'); // Hasil: "2026-06-05"
+        // Tangkap filter dari frontend (contoh: ?filter=2026-06)
+        const { filter } = req.query;
 
-// 2. Jalankan query Supabase dengan filter .eq()
-        const { data, error } = await supabase
-            .from('absensi')
+        // Siapkan kerangka Query ke Supabase
+        let query = supabase
+            .from('penggajian')
             .select(`
-                id, tanggal, status,
-                upah_harian, bonus_kedisiplinan, bonus_kerapian, upah_lembur, denda,
+                id, periode_bulan, periode_tahun, 
+                gaji_dasar, total_bonus, total_potongan, total_gaji, status_pembayaran,
                 pegawai!inner (nama, jabatan (nama_jabatan))
             `)
-            .eq('tanggal', hariIni); // Filter hari ini saja
-            if (error) throw error;
+            .order('periode_tahun', { ascending: false })
+            .order('periode_bulan', { ascending: false });
 
-            // Transformasi data agar persis dengan format RekapGajiData di Frontend
-            const formattedData = data.map(absen => {
-                const upahDasar = absen.upah_harian || 0;
-                const totalBonusHarian = (absen.bonus_kedisiplinan || 0) + (absen.bonus_kerapian || 0) + (absen.upah_lembur || 0);
-                const totalPotonganHarian = absen.denda || 0;
-                const thpHarian = (upahDasar + totalBonusHarian) - totalPotonganHarian;
-    
-                return {
-                    id: absen.id,
-                    nama: absen.pegawai?.nama || 'Tanpa Nama',
-                    jabatan: absen.pegawai?.jabatan?.nama_jabatan || '-',
-                    gaji_dasar: upahDasar,
-                    total_bonus: totalBonusHarian,
-                    total_potongan: totalPotonganHarian,
-                    gaji_bersih: thpHarian > 0 ? thpHarian : 0, // Cegah nilai minus
-                    status: absen.status === 'void' ? 'Batal' : 'Selesai' 
-                };
-            });
-    
-            return res.status(200).json({ success: true, data: formattedData });
-    
-        } catch (error) {
-            console.error('Error getRekapHarian:', error.message);
-            return res.status(500).json({ success: false, message: 'Gagal mengambil rekap gaji harian' });
+        // Jika HRD memilih bulan spesifik di kalender frontend
+        if (filter) {
+            const [tahun, bulan] = filter.split('-'); // Memecah "2026-06"
+            if (tahun && bulan) {
+                query = query
+                    .eq('periode_tahun', parseInt(tahun))
+                    .eq('periode_bulan', parseInt(bulan));
+            }
         }
+
+        const { data, error } = await query;
+
+        if (error) throw error;
+
+        return res.status(200).json({ success: true, data });
+    } catch (error) {
+        console.error('Error getAllGaji:', error.message);
+        return res.status(500).json({ success: false, message: 'Gagal mengambil data gaji bulanan' });
+    }
 };
 
 // GET: Ambil Rekap Gaji Harian (Berdasarkan Tabel Absensi)
@@ -239,10 +234,32 @@ const generateGaji = async (req, res) => {
     }
 }
 
+// HELPER: Mesin Penerjemah "2026-W23" menjadi Rentang Tanggal (Senin - Minggu)
+const getISOWeekDateRange = (year, week) => {
+    const simple = new Date(year, 0, 1 + (week - 1) * 7);
+    const dow = simple.getDay();
+    const ISOweekStart = simple;
+    if (dow <= 4) ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+    else ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+    
+    const ISOweekEnd = new Date(ISOweekStart);
+    ISOweekEnd.setDate(ISOweekStart.getDate() + 6);
+    
+    const format = (d) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    };
+    return { start: format(ISOweekStart), end: format(ISOweekEnd) };
+};
+
 // GET: Ambil Rekap Mingguan
 const getRekapMingguan = async (req, res) => {
     try {
-        const { data, error } = await supabase
+        const { filter } = req.query; // Akan menerima "2026-W23" dari frontend
+
+        let query = supabase
             .from('rekap_mingguan')
             .select(`
                 id, tanggal_mulai, tanggal_akhir, 
@@ -253,6 +270,20 @@ const getRekapMingguan = async (req, res) => {
             `)
             .order('tanggal_akhir', { ascending: false });
 
+        // Jika HRD memilih minggu tertentu di kalender
+        if (filter) {
+            const [yearStr, weekStr] = filter.split('-W');
+            if (yearStr && weekStr) {
+                const range = getISOWeekDateRange(parseInt(yearStr), parseInt(weekStr));
+                
+                // Minta Supabase memfilter tanggal yang masuk dalam rentang minggu tersebut
+                query = query
+                    .gte('tanggal_mulai', range.start)
+                    .lte('tanggal_akhir', range.end);
+            }
+        }
+
+        const { data, error } = await query;
         if (error) throw error;
 
         return res.status(200).json({ success: true, data });
@@ -261,5 +292,6 @@ const getRekapMingguan = async (req, res) => {
         return res.status(500).json({ success: false, message: 'Gagal mengambil rekap mingguan' });
     }
 };
+
 
 module.exports = { getAllGaji, generateGaji, getRekapMingguan, getRekapHarian };

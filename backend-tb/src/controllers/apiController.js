@@ -249,6 +249,10 @@ const getLiveDashboard = async (req, res) => {
                 statusLembur = `${lembur.menit_lembur_diizinkan} Menit`;
             }
 
+            if (absen && typeof absen.is_kerapian !== 'undefined') {
+                is_kerapian = absen.is_kerapian; // Ambil nilai kerapian dari data absensi
+            }
+
             if (absen) {
                 // Di sini bisa disesuaikan apakah 'intime' jadi 'Tepat', dll.
                 // Sesuai frontend kamu: "Tepat", "Terlambat", "Void"

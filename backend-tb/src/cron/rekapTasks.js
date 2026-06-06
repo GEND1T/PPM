@@ -33,25 +33,33 @@ async function prosesRekapMingguan() {
                 .gte('tanggal', startDate)
                 .lte('tanggal', endDate);
 
+            // ... (kode atas tetap sama) ...
             if (errAbsen || !absensiMingguIni || absensiMingguIni.length === 0) continue;
 
-            let totalHadir = absensiMingguIni.length;
+            // PERBAIKAN: Hanya hitung hari di mana status absensi bukan 'void' (Mangkir/Alpha)
+            const absensiValid = absensiMingguIni.filter(absen => absen.status !== 'void');
+            let totalHadir = absensiValid.length; 
+
             let totalPokok = 0;
             let totalKerapian = 0;
             let totalDisiplin = 0;
             let totalDenda = 0;
-            let totalUpahLemburHarian = 0; // Uang lembur yang dicairkan mingguan
+            let totalUpahLemburHarian = 0; 
             let totalMenitLembur = 0;
 
-            // Akumulasi data harian
+            // Akumulasi data harian menggunakan absensi yang valid (TIDAK VOID)
+            // Catatan: Denda tetap dibaca dari semua absensiMingguIni karena orang mangkir mungkin kena denda
             for (let absen of absensiMingguIni) {
-                totalPokok += (absen.upah_harian || 0);
-                totalKerapian += (absen.bonus_kerapian || 0);
-                totalDisiplin += (absen.bonus_kedisiplinan || 0);
-                totalDenda += (absen.denda || 0);
-                totalUpahLemburHarian += (absen.upah_lembur || 0);
-                totalMenitLembur += (absen.menit_lembur_diakui || 0);
+                if (absen.status !== 'void') {
+                    totalPokok += (absen.upah_harian || 0);
+                    totalKerapian += (absen.bonus_kerapian || 0);
+                    totalDisiplin += (absen.bonus_kedisiplinan || 0);
+                    totalUpahLemburHarian += (absen.upah_lembur || 0);
+                    totalMenitLembur += (absen.menit_lembur_diakui || 0);
+                }
+                totalDenda += (absen.denda || 0); // Denda tetap dihitung penuh
             }
+            // ... (lanjutan kode Anda di bawahnya tetap sama) ...
 
             // A. KALKULASI PENDAPATAN BERSIH MINGGUAN (Gaji Cair)
             // Rumus: (Pokok + Kerapian + Disiplin + Upah Lembur Harian) - Denda
@@ -134,8 +142,8 @@ async function prosesRekapMingguan() {
 // Inisialisasi Jadwal
 function initRekapCronJobs() {
     // Format Cron: Menit Jam Tanggal Bulan Hari (0 = Minggu, 6 = Sabtu)
-    // Berjalan setiap Sabtu jam 23:00
-    cron.schedule('* 23 * * 6', () => {
+    // Berjalan setiap Sabtu jam 23:00 cron.schedule('0 23 * * 6',
+    cron.schedule('0 23 * * 6', () => {
         prosesRekapMingguan();
     });
     console.log('⏱️  Cron Jobs Rekap Mingguan (Sabtu 23:00) berhasil diinisialisasi.');

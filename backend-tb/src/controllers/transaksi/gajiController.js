@@ -293,9 +293,6 @@ const getRekapMingguan = async (req, res) => {
     }
 };
 
-// =========================================================================
-// HELPER FUNCTIONS: KALKULASI WAKTU (Format "HH:MM:SS" atau "HH:MM")
-// =========================================================================
 const konversiKeMenit = (timeStr) => {
     if (!timeStr || timeStr === '-') return 0;
     const [jam, menit] = timeStr.split(':').map(Number);
@@ -310,13 +307,10 @@ const hitungMenitTerlambat = (waktuScanMasuk, jamMasukShift) => {
 
 const hitungMenitPulangAwal = (waktuScanPulang, jamPulangShift) => {
     const scan = konversiKeMenit(waktuScanPulang);
-    const target = konversiKeMednit(jamPulangShift);
+    const target = konversiKeMenit(jamPulangShift);
     return scan < target ? target - scan : 0;
 };
 
-// =========================================================================
-// MAIN ENGINE: GENERATE GAJI MASSAL (VERSI PERBAIKAN)
-// =========================================================================
 const generateGajiMassal = async (req, res) => {
     try {
         const { periode_bulan, periode_tahun } = req.body;
@@ -325,14 +319,12 @@ const generateGajiMassal = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Data periode bulan dan tahun wajib diisi!' });
         }
 
-        // 1. Ambil semua data pegawai beserta aturan jabatannya
         const { data: listPegawai, error: errPegawai } = await supabase
             .from('pegawai')
-            .select('id, nama, tanggal_bergabung, job_id:jabatan_id, jabatan (*)');
+            .select('id, nama, tanggal_bergabung, jabatan_id, jabatan (*)');
             
         if (errPegawai) throw errPegawai;
 
-        // Formulasi rentang tanggal awal & akhir bulan (Solusi untuk tipe data DATE)
         const bulanStr = String(periode_bulan).padStart(2, '0');
         const awalBulan = `${periode_tahun}-${bulanStr}-01`;
         const totalHariBulan = new Date(periode_tahun, periode_bulan, 0).getDate();
@@ -341,40 +333,38 @@ const generateGajiMassal = async (req, res) => {
         let berhasil = 0;
         let gagal = 0;
 
-        // 2. Looping Perhitungan per Karyawan
         for (const pegawai of listPegawai) {
             try {
                 const aturanJabatan = pegawai.jabatan;
-                if (!aturanJabatan) throw new Error(`Jabatan tidak ditemukan untuk pegawai ${pegawai.nama}`);
+                if (!aturanJabatan) throw new Error(`Jabatan kosong`);
 
-                // --- TAHAP A: HITUNG TUNJANGAN LOYALITAS (MASA KERJA) ---
-                let tunjanganLoyalitas = 0;
+                // --- 1. HITUNG TABUNGAN LOYALITAS ---
+                // (Cron tidak mengurus ini karena berbasis tanggal bergabung, jadi Backend Gaji yang menghitungnya)
+                let tabunganLoyalitas = 0;
                 if (pegawai.tanggal_bergabung) {
                     const tglBergabung = new Date(pegawai.tanggal_bergabung);
                     const hariIni = new Date();
                     let masaKerjaTahun = hariIni.getFullYear() - tglBergabung.getFullYear();
                     
                     const m = hariIni.getMonth() - tglBergabung.getMonth();
-                    if (m < 0 || (m === 0 && hariIni.getDate() < tglBergabung.getDate())) {
-                        masaKerjaTahun--;
-                    }
+                    if (m < 0 || (m === 0 && hariIni.getDate() < tglBergabung.getDate())) masaKerjaTahun--;
 
                     if (masaKerjaTahun > 0) {
                         const { data: tierMasaKerja } = await supabase
                             .from('tier_tunjangan_masa_kerja')
                             .select('nominal_pengali')
-                            .eq('jabatan_id', pegawai.job_id)
+                            .eq('jabatan_id', pegawai.jabatan_id)
                             .lte('minimal_tahun', masaKerjaTahun)
                             .order('minimal_tahun', { ascending: false })
                             .limit(1);
 
                         if (tierMasaKerja && tierMasaKerja.length > 0) {
-                            tunjanganLoyalitas = masaKerjaTahun * (tierMasaKerja[0].nominal_pengali || 0);
+                            tabunganLoyalitas = masaKerjaTahun * (tierMasaKerja[0].nominal_pengali || 0);
                         }
                     }
                 }
 
-                // --- TAHAP B: AMBIL DATA ABSENSI DENGAN RANGE GTE & LTE ---
+                // --- 2. TARIK DATA ABSENSI BULANAN UNTUK THP ---
                 const { data: dataAbsen, error: errAbsen } = await supabase
                     .from('absensi')
                     .select('*, shifts (*)')
@@ -384,137 +374,131 @@ const generateGajiMassal = async (req, res) => {
 
                 if (errAbsen) throw errAbsen;
 
-                // Inisialisasi Akumulator Finansial
-                let upahDasarKalkulasi = 0;
-                let totalBonusDisiplin = 0;
-                let totalBonusKerapian = 0;
-                let totalUangLembur = 0;
-                let totalDendaMangkirAtauSistem = 0;
-                let totalDendaKeterlambatanMenit = 0;
-                let totalDendaPulangAwalMenit = 0;
-
-                const isGajiBulanan = aturanJabatan.tipe_penggajian === 'Bulanan';
+                let upahDasar = aturanJabatan.tipe_penggajian === 'Bulanan' ? (aturanJabatan.gaji_pokok_bulanan || 0) : 0;
+                let bonusDisiplinBulanIni = 0;
+                let bonusKerapianBulanIni = 0;
+                let uangLemburBulanIni = 0; 
                 
-                // Jika bulanan, langsung isi nilai dasarnya di awal
-                if (isGajiBulanan) {
-                    upahDasarKalkulasi = aturanJabatan.gaji_pokok_bulanan || 0;
-                }
+                let dendaKeterlambatan = 0;
+                let dendaPulangAwal = 0;
+                let dendaAlphaVoid = 0; 
 
                 if (dataAbsen && dataAbsen.length > 0) {
                     for (const absen of dataAbsen) {
                         const ruleShift = absen.shifts;
+                        const isBulanan = aturanJabatan.tipe_penggajian === 'Bulanan';
 
-                        // 1. Akumulasi Upah Pokok jika tipenya Harian
-                        if (!isGajiBulanan && absen.status !== 'void') {
-                            // Ambil dari upah_harian absensi jika ada, jika tidak gunakan upah standar jabatan
-                            upahDasarKalkulasi += (absen.upah_harian || aturanJabatan.upah_per_kehadiran || 0);
+                        if (absen.status === 'void') {
+                            if (isBulanan) dendaAlphaVoid += (aturanJabatan.upah_per_kehadiran || 0);
+                            continue; 
                         }
 
-                        // 2. Akumulasi Denda Dasar / Denda Sistem Mangkir
-                        totalDendaMangkirAtauSistem += (absen.denda || 0);
+                        if (!isBulanan) upahDasar += (absen.upah_harian || aturanJabatan.upah_per_kehadiran || 0);
 
-                        // Jalankan logika denda menit & bonus jika statusnya masuk kerja (bukan void)
-                        if (absen.status !== 'void') {
-                            
-                            // 3. Kalkulasi Uang Lembur (REKREASI ATURAN BARU)
-                            if (absen.upah_lembur && absen.upah_lembur > 0) {
-                                // Prioritas 1: Ambil langsung dari nominal upah_lembur hasil input/mesin absensi
-                                totalUangLembur += absen.upah_lembur;
-                            } else if (absen.menit_lembur_diakui && absen.menit_lembur_diakui > 0) {
-                                // Prioritas 2: Kalkulasi dari menit lembur dikali upah per jam jabatan
-                                const jamLembur = absen.menit_lembur_diakui / 60;
-                                totalUangLembur += (jamLembur * (aturanJabatan.upah_lembur_per_jam || 0));
+                        if (absen.menit_lembur_diakui && absen.menit_lembur_diakui > 0) {
+                            const jamLembur = absen.menit_lembur_diakui / 60;
+                            uangLemburBulanIni += (jamLembur * (aturanJabatan.upah_lembur_per_jam || 0));
+                        }
+
+                        if (ruleShift) {
+                            if (ruleShift.is_potong_gaji_terlambat && absen.waktu_awal) {
+                                const mTelat = hitungMenitTerlambat(absen.waktu_awal, ruleShift.jam_masuk);
+                                if (mTelat > (ruleShift.batas_toleransi_menit || 0)) dendaKeterlambatan += (mTelat * (ruleShift.denda_terlambat_per_menit || 0));
                             }
-
-                            // 4. Kalkulasi Denda Terlambat Per Menit
-                            if (ruleShift && ruleShift.is_potong_gaji_terlambat && absen.waktu_awal) {
-                                const menitTerlambat = hitungMenitTerlambat(absen.waktu_awal, ruleShift.jam_masuk);
-                                const batasToleransi = ruleShift.batas_toleransi_menit || 0;
-                                if (menitTerlambat > batasToleransi) {
-                                    totalDendaKeterlambatanMenit += (menitTerlambat * (ruleShift.denda_terlambat_per_menit || 0));
-                                }
-                            }
-
-                            // 5. Kalkulasi Denda Pulang Awal Per Menit
-                            if (ruleShift && ruleShift.is_potong_gaji_pulang_awal && absen.waktu_akhir) {
-                                const menitPulangAwal = hitungMenitPulangAwal(absen.waktu_akhir, ruleShift.jam_pulang);
-                                const toleransiPulang = ruleShift.toleransi_pulang_awal_menit || 0;
-                                if (menitPulangAwal > toleransiPulang) {
-                                    totalDendaPulangAwalMenit += (menitPulangAwal * (ruleShift.denda_pulang_awal_per_menit || 0));
-                                }
-                            }
-
-                            // 6. Akumulasi Bonus Kedisiplinan
-                            if (absen.bonus_kedisiplinan && absen.bonus_kedisiplinan > 0) {
-                                totalBonusDisiplin += absen.bonus_kedisiplinan;
-                            } else if (absen.status === 'intime' || absen.status === 'ontime') {
-                                totalBonusDisiplin += (aturanJabatan.bonus_disiplin_harian || 0);
-                            }
-
-                            // 7. Akumulasi Bonus Kerapian
-                            if (absen.bonus_kerapian && absen.bonus_kerapian > 0) {
-                                totalBonusKerapian += absen.bonus_kerapian;
-                            } else if (absen.is_kerapian === true) {
-                                totalBonusKerapian += (aturanJabatan.bonus_kerapian_harian || 0);
+                            if (ruleShift.is_potong_gaji_pulang_awal && absen.waktu_akhir) {
+                                const mAwal = hitungMenitPulangAwal(absen.waktu_akhir, ruleShift.jam_pulang);
+                                if (mAwal > (ruleShift.toleransi_pulang_awal_menit || 0)) dendaPulangAwal += (mAwal * (ruleShift.denda_pulang_awal_per_menit || 0));
                             }
                         }
+
+                        if (absen.status === 'intime' || absen.status === 'ontime') bonusDisiplinBulanIni += (aturanJabatan.bonus_disiplin_harian || 0);
+                        if (absen.is_kerapian) bonusKerapianBulanIni += (aturanJabatan.bonus_kerapian_harian || 0);
                     }
                 }
 
-                // --- TAHAP C: RAKIT STRUKTUR JSONB DI DATA BASE ---
                 const rincianBonus = {
-                    tunjangan_loyalitas: tunjanganLoyalitas,
-                    bonus_kedisiplinan_total: totalBonusDisiplin,
-                    bonus_kerapian_total: totalBonusKerapian,
-                    uang_lembur_total: Math.round(totalUangLembur) // Uang lembur masuk ke rincian bonus
+                    bonus_kedisiplinan_harian: bonusDisiplinBulanIni,
+                    bonus_kerapian_harian: bonusKerapianBulanIni,
+                    uang_lembur_bulanan: Math.round(uangLemburBulanIni)
                 };
 
                 const rincianPotongan = {
-                    denda_mangkir_sistem: totalDendaMangkirAtauSistem,
-                    denda_keterlambatan_menit: totalDendaKeterlambatanMenit,
-                    denda_pulang_awal_menit: totalDendaPulangAwalMenit
+                    denda_keterlambatan_menit: dendaKeterlambatan,
+                    denda_pulang_awal_menit: dendaPulangAwal,
+                    denda_alpha_void: dendaAlphaVoid
                 };
 
-                // --- TAHAP D: TOTAL AKHIR ---
-                const totalSemuaBonus = Object.values(rincianBonus).reduce((acc, curr) => acc + (curr || 0), 0);
-                const totalSemuaPotongan = Object.values(rincianPotongan).reduce((acc, curr) => acc + (curr || 0), 0);
-                
-                let gajiBersih = (upahDasarKalkulasi + totalSemuaBonus) - totalSemuaPotongan;
+                // --- 3. AMBIL INFO TABUNGAN DARI CRON JOB UNTUK DI TAMPILKAN DI SLIP ---
+                const { data: recordTHR } = await supabase
+                    .from('rekap_tahunan_hari_raya')
+                    .select('total_bonus_mingguan_terkumpul, nominal_bonus_lembur_tahunan')
+                    .eq('pegawai_id', pegawai.id)
+                    .eq('periode_tahun', periode_tahun)
+                    .maybeSingle();
+
+                const infoTabungan = {
+                    tabungan_loyalitas_akumulasi: tabunganLoyalitas,
+                    tabungan_mingguan_terkumpul: recordTHR?.total_bonus_mingguan_terkumpul || 0,
+                    tabungan_lembur_tahunan_terkumpul: recordTHR?.nominal_bonus_lembur_tahunan || 0
+                };
+
+                const totalBonusCair = Object.values(rincianBonus).reduce((a, b) => a + (b || 0), 0);
+                const totalPotonganCair = Object.values(rincianPotongan).reduce((a, b) => a + (b || 0), 0);
+                let gajiBersih = (upahDasar + totalBonusCair) - totalPotonganCair;
                 if (gajiBersih < 0) gajiBersih = 0; 
 
-                // --- TAHAP E: PUSH KE SUPABASE ---
-                const { error: errSave } = await supabase
+                // --- 4. SIMPAN KE TABEL PENGGAJIAN ---
+                const { error: errSaveGaji } = await supabase
                     .from('penggajian')
                     .insert([{ 
                         pegawai_id: pegawai.id, 
                         periode_bulan, 
                         periode_tahun, 
-                        gaji_dasar: upahDasarKalkulasi, // Nilai ini sekarang akan terisi sempurna
+                        gaji_dasar: upahDasar,
                         rincian_bonus: rincianBonus,
                         rincian_potongan: rincianPotongan,
-                        total_bonus: totalSemuaBonus,
-                        total_potongan: totalSemuaPotongan,
+                        informasi_tabungan: infoTabungan, 
+                        total_bonus: totalBonusCair,
+                        total_potongan: totalPotonganCair,
                         total_gaji: gajiBersih, 
                         status_pembayaran: 'Pending'
                     }]);
 
-                if (errSave) throw errSave;
-                berhardil++;
+                if (errSaveGaji) throw errSaveGaji;
+
+                // --- 5. UPDATE HANYA SALDO LOYALITAS KE TABEL THR ---
+                if (recordTHR) {
+                    await supabase
+                        .from('rekap_tahunan_hari_raya')
+                        .update({ saldo_loyalitas: tabunganLoyalitas })
+                        .eq('pegawai_id', pegawai.id)
+                        .eq('periode_tahun', periode_tahun);
+                } else {
+                    await supabase
+                        .from('rekap_tahunan_hari_raya')
+                        .insert([{
+                            pegawai_id: pegawai.id,
+                            periode_tahun: periode_tahun,
+                            saldo_loyalitas: tabunganLoyalitas
+                        }]);
+                }
+
+                berhasil++;
 
             } catch (error) {
-                console.error(`Gagal menghitung gaji pegawai ID ${pegawai.id}:`, error.message);
+                console.error(`Gagal memproses pegawai ID ${pegawai.id}:`, error.message);
                 gagal++;
             }
         }
 
         return res.status(200).json({ 
             success: true, 
-            message: `Generate massal selesai. ${berhardil} Slip gaji berhasil dibuat, ${gagal} dilewati.`
+            message: `Selesai. ${berhasil} Slip Gaji diproses, ${gagal} dilewati.`
         });
 
     } catch (error) {
         console.error('Critical Error:', error);
-        return res.status(500).json({ success: false, message: 'Terjadi kegagalan sistem pada payroll engine.' });
+        return res.status(500).json({ success: false, message: 'Kegagalan sistem pada payroll engine.' });
     }
 };
 

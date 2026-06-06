@@ -8,7 +8,7 @@ const createJabatan = async (req, res) => {
         const {
             departemen_id, nama_jabatan, upah_per_kehadiran, bonus_disiplin_harian,
             upah_lembur_per_jam, bonus_minggu_6_hari, bonus_minggu_5_hari,
-            bonus_minggu_harian, bonus_kerapian_harian, bonus_lembur_tahunan
+            bonus_minggu_harian, bonus_kerapian_harian, bonus_lembur_tahunan,tipe_penggajian
         } = req.body;
 
         if (!nama_jabatan) {
@@ -20,7 +20,7 @@ const createJabatan = async (req, res) => {
             .insert([{
                 departemen_id, nama_jabatan, upah_per_kehadiran, bonus_disiplin_harian,
                 upah_lembur_per_jam, bonus_minggu_6_hari, bonus_minggu_5_hari,
-                bonus_minggu_harian, bonus_kerapian_harian, bonus_lembur_tahunan
+                bonus_minggu_harian, bonus_kerapian_harian, bonus_lembur_tahunan,tipe_penggajian
             }])
             .select()
             .single();

@@ -11,5 +11,15 @@
       "source": "/(.*)",
       "destination": "/src/app.js"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/v1/cron/rekap-harian",
+      "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/v1/cron/rekap-mingguan",
+      "schedule": "0 23 * * 6"
+    }
   ]
 }

@@ -23,7 +23,10 @@ app.use('/api', apiRoutes);
 // V1 API ROUTING (Struktur Baru yang Rapi)
 // ==========================================
 const v1Routes = require('./routes/index');
-app.use('/api/v1', v1Routes);           
+app.use('/api/v1', v1Routes);
+
+const cronRoutes = require('./routes/cronRoutes');
+app.use('/api/cron', cronRoutes);
 
 // Rute Test / Health Check (Untuk memastikan server nyala)
 app.get('/', (req, res) => {

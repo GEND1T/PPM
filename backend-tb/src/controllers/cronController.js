@@ -1,2 +1,2 @@
-const { parseAdmsLog } = require('../cron/rekapTasks');
-const { prosesLogMesin } = require('../cron/dailyTasks');
+const { prosesRekapMingguan } = require('../cron/rekapTasks');
+const { prosesPenaltiLupaPulang } = require('../cron/dailyTasks');

@@ -4,11 +4,6 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');   
 const supabase = require('./config/supabaseClient'); // Memanggil koneksi database
-const { initCronJobs } = require('./cron/dailyTasks'); // Mengimpor cron jobs
-const { initRekapCronJobs } = require('./cron/rekapTasks');
-// const masterRoutes = require('./routes/index');
-// app.use('/api/v1', masterRoutes);
-
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -24,7 +19,6 @@ app.use('/iclock', admsRoutes);
 // Routing API PWA (Tambahkan 2 baris ini)
 const apiRoutes = require('./routes/apiRoutes');
 app.use('/api', apiRoutes);
-
 // ==========================================
 // V1 API ROUTING (Struktur Baru yang Rapi)
 // ==========================================
@@ -35,12 +29,6 @@ app.use('/api/v1', v1Routes);
 app.get('/', (req, res) => {
     res.json({ message: 'Pong! Backend Absensi ADMS Berjalan Lancar 🚀' });
 });
-
-// ==========================================
-// BAGIAN YANG TERLEWAT: Menyalakan Cron Job
-// ==========================================
-initCronJobs(); 
-initRekapCronJobs();  // Cron Mingguan (Payroll & THR) <--- Tambahkan baris ini
 
 // Jalankan Server
 app.listen(port, () => {

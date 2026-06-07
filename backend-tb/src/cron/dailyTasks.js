@@ -57,14 +57,4 @@ async function prosesPenaltiLupaPulang() {
     }
 }
 
-// Mendaftarkan jadwal ke node-cron
-function initCronJobs() {
-    // Format Cron: Menit Jam Tanggal Bulan Hari
-    cron.schedule('59 23 * * *', () => {
-        prosesPenaltiLupaPulang();
-    });
-
-    console.log('⏱️  Cron Jobs berhasil diinisialisasi (Penalti Lupa Pulang aktif jam 23:59).');
-}
-
-module.exports = { initCronJobs, prosesPenaltiLupaPulang };
+module.exports = { prosesPenaltiLupaPulang };

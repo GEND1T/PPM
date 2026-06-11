@@ -7,26 +7,53 @@ async function prosesLogMesin(log) {
     const { pinMesin, tanggal, jam, state } = log;
     const menitScan = timeToMinutes(jam);
 
-    // 1. Simpan selalu data mentah
+    // 1. Simpan selalu data mentah (Sebagai Blackbox/Bukti)
     await supabase.from('log_mesin_absensi').insert({
         pin_mesin_mentah: pinMesin,
         waktu_scan: `${tanggal} ${jam}`,
         punch_state: state
     });
 
-    // 2. Cari Pegawai
+    // 2. Cari Data Pegawai Dasar (Untuk Upah & Bonus)
     const { data: pegawai, error: errPegawai } = await supabase
         .from('pegawai')
-        .select('id, default_shift_id, jabatan(upah_per_kehadiran, bonus_disiplin_harian, upah_lembur_per_jam)')
+        .select('id, jabatan(upah_per_kehadiran, bonus_disiplin_harian, upah_lembur_per_jam)')
         .eq('pin_mesin', pinMesin)
         .single();
 
-    if (errPegawai || !pegawai || !pegawai.default_shift_id) return;
+    if (errPegawai || !pegawai) {
+        console.log(`[INFO] PIN Mesin ${pinMesin} tidak terdaftar di database pegawai.`);
+        return;
+    }
 
-    // Ambil aturan Shift
-    const { data: shift } = await supabase.from('shifts').select('*').eq('id', pegawai.default_shift_id).single();
-    
-    // 3. Cek absen hari ini
+    // =========================================================================
+    // 🌟 PERUBAHAN UTAMA: CARI JADWAL HARI INI DARI TABEL `jadwal_karyawan`
+    // =========================================================================
+    const { data: jadwalHariIni, error: errJadwal } = await supabase
+        .from('jadwal_karyawan')
+        .select('shift_id')
+        .eq('pegawai_id', pegawai.id)
+        .eq('tanggal', tanggal)
+        .maybeSingle();
+
+    // Jika jadwal tidak ada atau shift_id null (Berarti hari itu statusnya Libur / OFF)
+    if (errJadwal || !jadwalHariIni || !jadwalHariIni.shift_id) {
+        console.log(`[INFO] Scan diabaikan. Pegawai PIN ${pinMesin} tidak memiliki jadwal shift (OFF) pada ${tanggal}.`);
+        return; 
+        // Catatan: Jika perusahaan Anda mengizinkan lembur di hari libur, logika penolakan ini 
+        // harus diganti dengan logika pembuatan baris absensi tipe "Overtime Day Off".
+    }
+
+    // Ambil Aturan Shift berdasarkan jadwal hari ini
+    const { data: shift } = await supabase
+        .from('shifts')
+        .select('*')
+        .eq('id', jadwalHariIni.shift_id)
+        .single();
+
+    if (!shift) return;
+
+    // 3. Cek apakah pegawai sudah melakukan absensi (scan masuk) hari ini
     const { data: absenHariIni, error: errAbsen } = await supabase
         .from('absensi')
         .select('*')
@@ -63,7 +90,6 @@ async function prosesLogMesin(log) {
             // PEGAWAI TERLAMBAT
             if (shift.is_potong_gaji_terlambat) {
                 // Efek jera: Menit telat dihitung dari jam masuk resmi, BUKAN dari batas toleransi.
-                // Misal masuk 07:00, toleransi 07:15. Jika absen 07:20, telatnya 20 menit!
                 const menitTelat = menitScan - targetMasuk;
                 dendaTerlambat = menitTelat * (shift.denda_terlambat_per_menit || 0);
                 console.log(`[PENALTI] PIN ${pinMesin} telat ${menitTelat} menit. Denda Pagi: Rp ${dendaTerlambat}`);
@@ -73,7 +99,7 @@ async function prosesLogMesin(log) {
         const { error: insertError } = await supabase.from('absensi').insert({
             pegawai_id: pegawai.id,
             tanggal: tanggal,
-            shift_id: shift.id,
+            shift_id: shift.id, // Gunakan shift.id dari relasi jadwal
             waktu_awal: jam,
             status: statusMasuk,
             upah_harian: pegawai.jabatan.upah_per_kehadiran, // Upah pokok TETAP UTUH di sini
@@ -136,7 +162,6 @@ async function prosesLogMesin(log) {
     let dendaPulangAwal = 0;
 
     // SKENARIO A: PULANG LEBIH CEPAT (Early Departure)
-    
     if (menitScan < targetPulang) {
         statusAkhir = 'pulang_awal';
         bonusKedisiplinanAkhir = 0; 
@@ -148,7 +173,6 @@ async function prosesLogMesin(log) {
             }
         }
     }
-
     // SKENARIO B: LEMBUR / PULANG NORMAL
     else if (menitScan > targetPulang) {
         menitLemburMesin = menitScan - targetPulang;
@@ -167,7 +191,7 @@ async function prosesLogMesin(log) {
         waktu_akhir: jam,
         status: statusAkhir,
         bonus_kedisiplinan: bonusKedisiplinanAkhir,
-        denda: dendaHariIni, // Simpan total akumulasi denda
+        denda: dendaHariIni, 
         menit_lembur_mesin: menitLemburMesin,
         menit_lembur_diakui: menitLemburDiakui,
         upah_lembur: upahLembur

@@ -86,44 +86,71 @@ const createJadwalSatuan = async (req, res) => {
 };
 
 // =========================================================================
-// 3. CREATE BULK: Generate Jadwal Massal Berdasarkan Rentang Tanggal
+// 3. CREATE BULK: Generate Jadwal Massal (Dukung Default Shift & Override)
 // =========================================================================
 // Endpoint: POST /api/v1/jadwal/generate-massal
 const generateJadwalMassal = async (req, res) => {
     try {
         const { list_pegawai_ids, tanggal_mulai, tanggal_selesai, shift_id } = req.body;
 
-        if (!list_pegawai_ids || !tanggal_mulai || !tanggal_selesai || !shift_id) {
+        if (!list_pegawai_ids || list_pegawai_ids.length === 0 || !tanggal_mulai || !tanggal_selesai) {
             return res.status(400).json({ success: false, message: 'Parameter pembuatan massal tidak lengkap.' });
         }
+
+        // 1. Ambil data pegawai beserta default_shift_id-nya dari database
+        const { data: listPegawai, error: errPegawai } = await supabase
+            .from('pegawai')
+            .select('id, default_shift_id')
+            .in('id', list_pegawai_ids); // Mengambil data khusus untuk ID yang dicentang admin
+
+        if (errPegawai) throw errPegawai;
 
         const start = new Date(tanggal_mulai);
         const end = new Date(tanggal_selesai);
         const listJadwalBaru = [];
 
-        // Looping untuk menyusun array data jadwal harian per karyawan
-        for (const pegawaiId of list_pegawai_ids) {
+        // 2. Deteksi Mode: Apakah Admin ingin override atau pakai default?
+        // Frontend akan mengirim shift_id berupa string: "" (default), "off" (libur), atau angka "1", "2"
+        let isOverride = false;
+        let targetShiftId = null;
+
+        if (shift_id !== undefined && shift_id !== "") {
+            isOverride = true;
+            if (shift_id === "off") {
+                targetShiftId = null; // Memaksa menjadi hari libur
+            } else {
+                targetShiftId = parseInt(shift_id); // Memaksa menjadi shift spesifik
+            }
+        }
+
+        // 3. Looping Pembuatan Data Matrix
+        for (const pegawai of listPegawai) {
+            // Tentukan shift_id akhir untuk pegawai ini
+            const finalShiftId = isOverride ? targetShiftId : pegawai.default_shift_id;
+
+            // Looping tanggal
             let current = new Date(start);
             while (current <= end) {
-                const formatTanggal = current.toLocaleDateString('en-CA'); // Format YYYY-MM-DD
+                const formatTanggal = current.toLocaleDateString('en-CA'); // YYYY-MM-DD
                 
                 listJadwalBaru.push({
-                    pegawai_id: pegawaiId,
+                    pegawai_id: pegawai.id,
                     tanggal: formatTanggal,
-                    shift_id: shift_id
+                    shift_id: finalShiftId // Terapkan shift yang sudah ditentukan
                 });
                 
                 current.setDate(current.getDate() + 1);
             }
         }
 
-        // Tembakkan massal menggunakan upsert agar jika tanggalnya bentrok, otomatis tertimpa (update)
-        const { error } = await supabase
-            .from('jadwal_karyawan')
-            .upsert(listJadwalBaru, { onConflict: 'pegawai_id,tanggal' }); 
-            // Catatan: Pastikan Anda membuat Unique Constraint (pegawai_id, tanggal) di Supabase agar fitur tertimpa ini aktif
+        // 4. Eksekusi Tembakan ke Database (Upsert: Timpa jika sudah ada)
+        if (listJadwalBaru.length > 0) {
+            const { error } = await supabase
+                .from('jadwal_karyawan')
+                .upsert(listJadwalBaru, { onConflict: 'pegawai_id,tanggal' }); 
 
-        if (error) throw error;
+            if (error) throw error;
+        }
 
         return res.status(200).json({ 
             success: true, 

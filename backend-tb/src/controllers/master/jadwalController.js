@@ -1,13 +1,12 @@
 
 const supabase = require('../../config/supabaseClient');
 
-// =========================================================================
-// 1. READ: Ambil Semua Jadwal (Dengan Filter Bulan, Tahun, atau Pegawai)
-// =========================================================================
-// Endpoint: GET /api/v1/jadwal?bulan=06&tahun=2026&pegawai_id=5
+
+// Endpoint: GET /api/v1/jadwal?start_date=2026-05-21&end_date=2026-06-20
 const getAllJadwal = async (req, res) => {
     try {
-        const { bulan, tahun, pegawai_id } = req.query;
+        // Ambil parameter tanggal mulai dan selesai dari query URL
+        const { start_date, end_date, pegawai_id } = req.query;
 
         let query = supabase
             .from('jadwal_karyawan')
@@ -21,17 +20,11 @@ const getAllJadwal = async (req, res) => {
             `)
             .order('tanggal', { ascending: true });
 
-        // Filter dinamis jika parameter dikirim dari frontend
-        if (pegawai_id) {
-            query = query.eq('pegawai_id', pegawai_id);
-        }
+        if (pegawai_id) query = query.eq('pegawai_id', pegawai_id);
 
-        if (bulan && tahun) {
-            const awalBulan = `${tahun}-${String(bulan).padStart(2, '0')}-01`;
-            const totalHari = new Date(tahun, bulan, 0).getDate();
-            const akhirBulan = `${tahun}-${String(bulan).padStart(2, '0')}-${String(totalHari).padStart(2, '0')}`;
-            
-            query = query.gte('tanggal', awalBulan).lte('tanggal', akhirBulan);
+        // Filter dinamis berdasarkan rentang tanggal
+        if (start_date && end_date) {
+            query = query.gte('tanggal', start_date).lte('tanggal', end_date);
         }
 
         const { data, error } = await query;

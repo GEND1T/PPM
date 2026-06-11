@@ -1,4 +1,5 @@
-const supabase = require('../config/supabaseClient');
+
+const supabase = require('../../config/supabaseClient');
 
 // =========================================================================
 // 1. READ: Ambil Semua Jadwal (Dengan Filter Bulan, Tahun, atau Pegawai)

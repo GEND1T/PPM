@@ -12,6 +12,7 @@ const shiftRoutes = require('./master/shiftRoutes');
 const pegawaiRoutes = require('./master/pegawaiRoutes');
 const absenRoutes = require('./transaksi/absenRoutes');
 const gajiRoutes = require('./transaksi/gajiRoutes');
+const jadwalRoutes = require('./master/jadwalRoutes');
 
 
 // Daftarkan rute dan pasang gembok JWT secara global untuk rute ini
@@ -22,5 +23,6 @@ router.use('/shifts', verifikasiToken, shiftRoutes);
 router.use('/pegawai', verifikasiToken, pegawaiRoutes);
 router.use('/absen', verifikasiToken, absenRoutes);
 router.use('/gaji', verifikasiToken, gajiRoutes);
+router.use('/jadwal', verifikasiToken, jadwalRoutes);
 
 module.exports = router;

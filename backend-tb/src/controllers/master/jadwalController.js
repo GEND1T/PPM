@@ -223,68 +223,56 @@ const tukarShiftKaryawan = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Parameter pertukaran tidak lengkap.' });
         }
 
-        // 2. Ambil jadwal milik Pegawai Asal (Pegawai 1)
-        const { data: jadwalAsal, error: errAsal } = await supabase
+        // 2. Ambil jadwal existing (Bisa jadi null jika jadwal belum di-generate / sedang Libur)
+        const { data: jadwalAsal } = await supabase
             .from('jadwal_karyawan')
-            .select('id, shift_id')
+            .select('shift_id')
             .eq('pegawai_id', pegawai_id_asal)
             .eq('tanggal', tanggal_asal)
             .maybeSingle();
 
-        // 3. Ambil jadwal milik Pegawai Tujuan (Pegawai 2)
-        const { data: jadwalTujuan, error: errTujuan } = await supabase
+        const { data: jadwalTujuan } = await supabase
             .from('jadwal_karyawan')
-            .select('id, shift_id')
+            .select('shift_id')
             .eq('pegawai_id', pegawai_id_tujuan)
             .eq('tanggal', tanggal_tujuan)
             .maybeSingle();
 
-        if (errAsal || errTujuan) {
-            throw new Error('Gagal memeriksa jadwal lama di database.');
-        }
-
-        // Catatan: Jika salah satu pegawai libur (tidak ada baris jadwal), 
-        // kita asumsikan shift_id-nya adalah null (Day Off)
+        // Ambil ID shift-nya. Jika datanya tidak ada, asumsikan null (Libur)
         const shiftAsal = jadwalAsal ? jadwalAsal.shift_id : null;
         const shiftTujuan = jadwalTujuan ? jadwalTujuan.shift_id : null;
 
+        // Cegah eksekusi jika keduanya sama-sama libur (tidak ada yang bisa ditukar)
         if (!jadwalAsal && !jadwalTujuan) {
-            return res.status(400).json({ success: false, message: 'Kedua pegawai tidak memiliki jadwal aktif di tanggal tersebut.' });
+            return res.status(400).json({ success: false, message: 'Kedua pegawai sedang libur pada tanggal tersebut.' });
         }
 
-        // 4. Eksekusi Pertukaran Menggunakan UPSERT (Insert jika belum ada, Update jika sudah ada)
-        // Pegawai Asal mendapatkan Shift milik Pegawai Tujuan
-        const dataUpdateAsal = {
-            pegawai_id: pegawai_id_asal,
-            tanggal: tanggal_asal,
-            shift_id: shiftTujuan // Nilai ditukar
-        };
-        if (jadwalAsal) dataUpdateAsal.id = jadwalAsal.id; // Kunci ID jika update
+        // 3. Rakit Array Payload Pertukaran (Timbal-Balik)
+        const payloadTukar = [
+            {
+                pegawai_id: pegawai_id_asal,
+                tanggal: tanggal_asal, // Tanggal milik Asal tetap
+                shift_id: shiftTujuan  // Tapi shift-nya mengambil milik Tujuan
+            },
+            {
+                pegawai_id: pegawai_id_tujuan,
+                tanggal: tanggal_tujuan, // Tanggal milik Tujuan tetap
+                shift_id: shiftAsal      // Tapi shift-nya mengambil milik Asal
+            }
+        ];
 
-        // Pegawai Tujuan mendapatkan Shift milik Pegawai Asal
-        const dataUpdateTujuan = {
-            pegawai_id: pegawai_id_tujuan,
-            tanggal: tanggal_tujuan,
-            shift_id: shiftAsal // Nilai ditukar
-        };
-        if (jadwalTujuan) dataUpdateTujuan.id = jadwalTujuan.id; // Kunci ID jika update
-
-        // Tembakkan perubahan ke Supabase
-        const { error: errUpsertAsal } = await supabase
+        // 4. Eksekusi 1x Request Menggunakan UPSERT
+        // onConflict memastikan: Jika baris belum ada (awalnya libur), buat baru (Insert). 
+        // Jika sudah ada, langsung timpa shift-nya (Update).
+        const { error: errUpsert } = await supabase
             .from('jadwal_karyawan')
-            .upsert(dataUpdateAsal);
+            .upsert(payloadTukar, { onConflict: 'pegawai_id,tanggal' });
 
-        const { error: errUpsertTujuan } = await supabase
-            .from('jadwal_karyawan')
-            .upsert(dataUpdateTujuan);
-
-        if (errUpsertAsal || errUpsertTujuan) {
-            throw new Error('Gagal mengunci pertukaran shift baru.');
-        }
+        if (errUpsert) throw errUpsert;
 
         return res.status(200).json({ 
             success: true, 
-            message: '🚀 Tukar shift berhasil diproses secara realtime!' 
+            message: '🚀 Pertukaran shift lintas hari berhasil diproses secara realtime!' 
         });
 
     } catch (error) {

@@ -15,7 +15,7 @@
   "crons": [
     {
       "path": "/api/cron/rekap-harian",
-      "schedule": "0 23 * * *"
+      "schedule": "0 22 * * *"
     }
   ]
 }

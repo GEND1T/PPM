@@ -19,9 +19,6 @@ router.get('/dashboard/live', apiController.getLiveDashboard);
 // PWA Mandor (Kerapian)
 router.put('/kerapian', verifikasiToken, apiController.updateKerapian);
 
-// PWA HRD (Surat Perintah Lembur)
-router.post('/lembur/spl', verifikasiToken, apiController.createSPL);
-
 // Tombol Nuklir (Void Absensi)
 router.put('/absen/void', verifikasiToken, apiController.voidAbsensi);
 

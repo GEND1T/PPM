@@ -81,53 +81,6 @@ const updateKerapian = async (req, res) => {
 };
 
 // ==========================================
-// FITUR BARU: API INPUT SPL (LEMBUR)
-// ==========================================
-const createSPL = async (req, res) => {
-    try {
-        const { pegawai_id, tanggal, menit_lembur_diizinkan, alasan_lembur, disetujui_oleh } = req.body;
-
-        // Validasi input dasar
-        if (!pegawai_id || !tanggal || typeof menit_lembur_diizinkan === 'undefined') {
-            return res.status(400).json({
-                success: false,
-                message: 'Data tidak lengkap. Butuh pegawai_id, tanggal, dan menit_lembur_diizinkan.'
-            });
-        }
-
-        // Gunakan UPSERT: Jika belum ada = Insert. Jika sudah ada di tanggal yang sama = Update.
-        // (Syarat: constraint unique_lembur_harian pada DB harus ada, yang mana sudah kita buat sebelumnya)
-        const { data, error } = await supabase
-            .from('otorisasi_lembur')
-            .upsert({
-                pegawai_id: pegawai_id,
-                tanggal: tanggal,
-                menit_lembur_diizinkan: menit_lembur_diizinkan,
-                alasan_lembur: alasan_lembur || 'Lembur reguler',
-                disetujui_oleh: disetujui_oleh || 'Sistem HRD'
-            }, { onConflict: 'pegawai_id, tanggal' }) 
-            .select()
-            .single();
-
-        if (error) throw error;
-
-        // Berikan respons sukses ke PWA
-        return res.status(200).json({
-            success: true,
-            message: 'Surat Perintah Lembur (SPL) berhasil disimpan.',
-            data: data
-        });
-
-    } catch (error) {
-        console.error('Error di API Input SPL:', error.message);
-        return res.status(500).json({
-            success: false,
-            message: 'Terjadi kesalahan pada server saat menyimpan SPL.'
-        });
-    }
-};
-
-// ==========================================
 // FITUR BARU: API TOMBOL NUKLIR (VOID ABSEN)
 // ==========================================
 const voidAbsensi = async (req, res) => {
@@ -197,65 +150,76 @@ const voidAbsensi = async (req, res) => {
 // ==========================================
 const getLiveDashboard = async (req, res) => {
     try {
-        // Ambil tanggal hari ini (Waktu Lokal server)
+        // Ambil tanggal hari ini (Waktu Lokal server/WIB)
+        // Catatan: Jika server menggunakan UTC, pastikan formatnya sudah diubah ke zona waktu lokal perusahaan
         const today = new Date().toLocaleDateString('en-CA'); 
 
         // 1. Tarik semua data pegawai aktif beserta nama jabatannya
         const { data: listPegawai, error: errPegawai } = await supabase
             .from('pegawai')
-            .select('id, nama, pin_mesin, jabatan(nama_jabatan)');
+            .select('id, nama, pin_mesin, jabatan(nama_jabatan)'); // default_shift_id sudah tidak diperlukan di sini
 
         if (errPegawai) throw errPegawai;
+
+        // ==========================================
+        // FITUR BARU: 1.5 Tarik Jadwal Kerja HARI INI
+        // ==========================================
+        const { data: jadwalHariIni, error: errJadwal } = await supabase
+            .from('jadwal_karyawan')
+            .select('pegawai_id, shift_id, shifts(kode_shift, jam_masuk, jam_pulang)')
+            .eq('tanggal', today);
+
+        if (errJadwal) throw errJadwal;
 
         // 2. Tarik semua data absensi HARI INI
         const { data: absenHariIni, error: errAbsen } = await supabase
             .from('absensi')
-            .select('pegawai_id, waktu_awal, waktu_akhir, status, is_kerapian') // Pastikan kolom is_kerapian sudah ada di tabel absensi
+            .select('pegawai_id, waktu_awal, waktu_akhir, status, is_kerapian') 
             .eq('tanggal', today);
 
         if (errAbsen) throw errAbsen;
 
-        // ==========================================
-        // FITUR BARU: 2.5 Tarik Otorisasi Lembur HARI INI
-        // ==========================================
+        // 3. Tarik Otorisasi Lembur HARI INI
         const { data: lemburHariIni, error: errLembur } = await supabase
-            .from('otorisasi_lembur') // <-- Sesuaikan jika nama tabelmu berbeda
-            .select('pegawai_id, menit_lembur_diizinkan') // <-- Sesuaikan nama kolom menitnya
+            .from('otorisasi_lembur') 
+            .select('pegawai_id, menit_lembur_diizinkan') 
             .eq('tanggal', today);
             
         if (errLembur) throw errLembur;
 
         // Variabel untuk menghitung statistik Dashboard
         let totalPegawai = listPegawai.length;
+        let totalLibur = 0; // Tambahan metrik baru
         let totalHadirTepatWaktu = 0;
         let totalTerlambat = 0;
         let totalBelumHadir = 0;
         let totalVoid = 0;
 
-        // 3. Gabungkan data (Mapping)
+        // 4. Gabungkan data (Mapping)
         const hasilDashboard = listPegawai.map(pegawai => {
-            // Cari apakah pegawai ini ada di tabel absen & lembur hari ini
+            // Cari data terkait untuk pegawai ini pada HARI INI
+            const jadwal = jadwalHariIni.find(j => j.pegawai_id === pegawai.id);
             const absen = absenHariIni.find(a => a.pegawai_id === pegawai.id);
             const lembur = lemburHariIni.find(l => l.pegawai_id === pegawai.id);
 
-            let statusHariIni = 'Belum Hadir';
+            // Deteksi apakah hari ini pegawai tersebut jadwalnya OFF/Libur
+            const isLibur = !jadwal || !jadwal.shift_id;
+            
+            let statusHariIni = isLibur ? 'Libur (OFF)' : 'Belum Hadir';
             let jamMasuk = '-';
             let jamPulang = '-';
-            let statusLembur = '-'; // Default jika tidak ada izin lembur
-            let is_kerapian = false; // Default jika tidak ada data kerapian
+            let statusLembur = '-'; 
+            let is_kerapian = false; 
 
-            // Jika ada data lembur, ubah "-" menjadi jumlah menit
             if (lembur && lembur.menit_lembur_diizinkan) {
                 statusLembur = `${lembur.menit_lembur_diizinkan} Menit`;
             }
 
             if (absen && typeof absen.is_kerapian !== 'undefined') {
-                is_kerapian = absen.is_kerapian; // Ambil nilai kerapian dari data absensi
+                is_kerapian = absen.is_kerapian; 
             }
 
             if (absen) {
-                // Di sini bisa disesuaikan apakah 'intime' jadi 'Tepat', dll.
-                // Sesuai frontend kamu: "Tepat", "Terlambat", "Void"
                 if (absen.status === 'intime' || absen.status === 'ontime') {
                     statusHariIni = 'Tepat Waktu';
                     totalHadirTepatWaktu++;
@@ -263,49 +227,56 @@ const getLiveDashboard = async (req, res) => {
                     statusHariIni = 'Terlambat';
                     totalTerlambat++;
                 } else if (absen.status === 'void') {
-                    statusHariIni = 'Absensi di Batalkan';
+                    statusHariIni = 'Absensi Dibatalkan';
                     totalVoid++;
                 } else if (absen.status === 'pulang_awal') {
                     statusHariIni = 'Pulang Awal';
                 } else if (absen.status === 'lupa_pulang') {
                     statusHariIni = 'Tidak Scan Pulang';
-                }else {
+                } else {
                     statusHariIni = absen.status; // Fallback
                 }
 
                 jamMasuk = absen.waktu_awal || '-';
                 jamPulang = absen.waktu_akhir || '-';
             } else {
-                totalBelumHadir++;
+                // Perhitungan Statistik Cerdas: 
+                // Jika tidak ada absen, pastikan dia memang harus masuk hari ini sebelum dihitung "Belum Hadir"
+                if (isLibur) {
+                    totalLibur++;
+                } else {
+                    totalBelumHadir++;
+                }
             }
 
-            // Return keys disamakan 100% dengan GridColDef di Frontend
             return {
-                id: pegawai.id, // MUI DataGrid sangat butuh key 'id'
+                id: pegawai.id, 
                 nama: pegawai.nama,
                 jabatan: pegawai.jabatan ? pegawai.jabatan.nama_jabatan : 'Tidak Diketahui',
+                // Tampilkan info shift di dashboard (Opsional tapi sangat membantu HRD)
+                info_shift: isLibur ? 'OFF' : jadwal.shifts?.kode_shift || '-', 
                 waktu_masuk: jamMasuk,
                 waktu_pulang: jamPulang,
                 status_masuk: statusHariIni,
-                status_lembur: statusLembur, // Akan berisi misal "120 Menit" atau "-"
-                is_kerapian: absen ? absen.is_kerapian : false // Asumsi kolom is_kerapian sudah ada di tabel absensi
-                
-
+                status_lembur: statusLembur, 
+                is_kerapian: is_kerapian,
+                shift_id_hari_ini: isLibur ? null : jadwal.shift_id // Menggantikan default_shift_id
             };
         });
 
-        // 4. Kirim respons JSON ke Frontend
+        // 5. Kirim respons JSON ke Frontend
         return res.status(200).json({
             success: true,
             tanggal: today,
             statistik: {
                 total_pegawai: totalPegawai,
+                total_libur_hari_ini: totalLibur, // Data baru yang sangat berguna
                 hadir_tepat_waktu: totalHadirTepatWaktu,
                 terlambat: totalTerlambat,
                 belum_hadir: totalBelumHadir,
                 dibatalkan_void: totalVoid
             },
-            data_karyawan: hasilDashboard // Ini nanti diambil dari res.data_karyawan
+            data_karyawan: hasilDashboard 
         });
 
     } catch (error) {
@@ -391,4 +362,4 @@ const registerAdmin = async (req, res) => {
 };
 
 // Pastikan registerAdmin ikut diekspor
-module.exports = { updateKerapian, createSPL, voidAbsensi, getLiveDashboard, loginHRD, registerAdmin };
+module.exports = { updateKerapian, voidAbsensi, getLiveDashboard, loginHRD, registerAdmin };

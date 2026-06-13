@@ -7,7 +7,7 @@ const splController = require('../../controllers/transaksi/splController');
 router.post('/spl', verifikasiToken, splController.createSPL);
 router.get('/', verifikasiToken, splController.getSPL);
 router.delete('/:id', verifikasiToken, splController.deleteSPL);
-router.get('/all', verifikasiToken, splController.getAllSPL);
+router.get('/future', verifikasiToken, splController.getAllSPL);
 
 
 module.exports = router;

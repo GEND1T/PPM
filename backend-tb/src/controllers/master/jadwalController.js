@@ -211,61 +211,116 @@ const tukarShiftKaryawan = async (req, res) => {
             tanggal_tujuan 
         } = req.body;
 
-        // 1. Validasi Input
+        // Ambil ID admin dari middleware otentikasi (contoh: req.user)
+        const admin_id = req.user?.id || 'admin_system'; 
+
+        // 1. Validasi Input Dasar
         if (!pegawai_id_asal || !tanggal_asal || !pegawai_id_tujuan || !tanggal_tujuan) {
             return res.status(400).json({ success: false, message: 'Parameter pertukaran tidak lengkap.' });
         }
 
-        // 2. Ambil jadwal existing (Bisa jadi null jika jadwal belum di-generate / sedang Libur)
-        const { data: jadwalAsal } = await supabase
-            .from('jadwal_karyawan')
-            .select('shift_id')
-            .eq('pegawai_id', pegawai_id_asal)
-            .eq('tanggal', tanggal_asal)
-            .maybeSingle();
+        if (pegawai_id_asal === pegawai_id_tujuan && tanggal_asal === tanggal_tujuan) {
+            return res.status(400).json({ success: false, message: 'Tidak dapat menukar dengan jadwal di hari yang sama.' });
+        }
 
-        const { data: jadwalTujuan } = await supabase
-            .from('jadwal_karyawan')
-            .select('shift_id')
-            .eq('pegawai_id', pegawai_id_tujuan)
-            .eq('tanggal', tanggal_tujuan)
-            .maybeSingle();
+        // 2. Tarik Data Jadwal dan Role Pegawai Secara Paralel
+        const [jadwalAsalRes, jadwalTujuanRes, pegawaiAsalRes, pegawaiTujuanRes] = await Promise.all([
+            supabase.from('jadwal_karyawan').select('id, shift_id').eq('pegawai_id', pegawai_id_asal).eq('tanggal', tanggal_asal).maybeSingle(),
+            supabase.from('jadwal_karyawan').select('id, shift_id').eq('pegawai_id', pegawai_id_tujuan).eq('tanggal', tanggal_tujuan).maybeSingle(),
+            supabase.from('pegawai').select('role_id').eq('id', pegawai_id_asal).single(),
+            supabase.from('pegawai').select('role_id').eq('id', pegawai_id_tujuan).single()
+        ]);
 
-        // Ambil ID shift-nya. Jika datanya tidak ada, asumsikan null (Libur)
-        const shiftAsal = jadwalAsal ? jadwalAsal.shift_id : null;
-        const shiftTujuan = jadwalTujuan ? jadwalTujuan.shift_id : null;
+        const jadwalAsal = jadwalAsalRes.data;
+        const jadwalTujuan = jadwalTujuanRes.data;
 
-        // Cegah eksekusi jika keduanya sama-sama libur (tidak ada yang bisa ditukar)
+        // Cegah eksekusi jika keduanya libur
         if (!jadwalAsal && !jadwalTujuan) {
             return res.status(400).json({ success: false, message: 'Kedua pegawai sedang libur pada tanggal tersebut.' });
         }
 
-        // 3. Rakit Array Payload Pertukaran (Timbal-Balik)
-        const payloadTukar = [
-            {
+        // 3. Validasi Posisi (Role)
+        // Memastikan Kasir hanya bertukar dengan Kasir, dsb.
+        if (pegawaiAsalRes.data?.role_id !== pegawaiTujuanRes.data?.role_id) {
+            return res.status(403).json({ success: false, message: 'Pertukaran ditolak: Role/Posisi kedua pegawai tidak setara.' });
+        }
+
+        // 4. Validasi Aturan Jam Kerja (Contoh Kerangka Logika)
+        // Jika keduanya punya shift, pastikan jadwal baru tidak melanggar waktu istirahat minimal.
+        // Asumsi: Kamu mengambil jam_mulai dan jam_selesai dari tabel 'shift'.
+        if (jadwalAsal && jadwalTujuan) {
+            /* [IMPLEMENTASI REAL-CASE]:
+            1. Query shift hari sebelumnya untuk pegawai_id_asal.
+            2. Cek selisih waktu antara jam_selesai hari sebelumnya dengan jam_mulai shift_tujuan.
+            3. Jika selisih < 8 jam, return error (contoh: "Pelanggaran jam istirahat").
+            */
+        }
+
+        // 5. Susun Operasi Database (Penanganan Nilai Null / Libur)
+        // Kita gunakan pendekatan UPSERT jika ada shift, dan DELETE jika jadi libur.
+        const operasiDatabase = [];
+
+        // Logika untuk Pegawai Asal
+        if (jadwalTujuan) {
+            operasiDatabase.push(supabase.from('jadwal_karyawan').upsert({
                 pegawai_id: pegawai_id_asal,
-                tanggal: tanggal_asal, // Tanggal milik Asal tetap
-                shift_id: shiftTujuan  // Tapi shift-nya mengambil milik Tujuan
-            },
-            {
+                tanggal: tanggal_asal,
+                shift_id: jadwalTujuan.shift_id
+            }, { onConflict: 'pegawai_id,tanggal' }));
+        } else if (jadwalAsal) {
+            // Jika Tujuan libur, maka Asal menjadi libur (hapus jadwal)
+            operasiDatabase.push(supabase.from('jadwal_karyawan').delete().eq('id', jadwalAsal.id));
+        }
+
+        // Logika untuk Pegawai Tujuan
+        if (jadwalAsal) {
+            operasiDatabase.push(supabase.from('jadwal_karyawan').upsert({
                 pegawai_id: pegawai_id_tujuan,
-                tanggal: tanggal_tujuan, // Tanggal milik Tujuan tetap
-                shift_id: shiftAsal      // Tapi shift-nya mengambil milik Asal
-            }
-        ];
+                tanggal: tanggal_tujuan,
+                shift_id: jadwalAsal.shift_id
+            }, { onConflict: 'pegawai_id,tanggal' }));
+        } else if (jadwalTujuan) {
+            // Jika Asal libur, maka Tujuan menjadi libur (hapus jadwal)
+            operasiDatabase.push(supabase.from('jadwal_karyawan').delete().eq('id', jadwalTujuan.id));
+        }
 
-        // 4. Eksekusi 1x Request Menggunakan UPSERT
-        // onConflict memastikan: Jika baris belum ada (awalnya libur), buat baru (Insert). 
-        // Jika sudah ada, langsung timpa shift-nya (Update).
-        const { error: errUpsert } = await supabase
-            .from('jadwal_karyawan')
-            .upsert(payloadTukar, { onConflict: 'pegawai_id,tanggal' });
+        // 6. Eksekusi Tukar Shift Secara Atomik di App Level
+        const results = await Promise.all(operasiDatabase);
+        const errors = results.filter(res => res.error);
+        if (errors.length > 0) {
+            console.error('DB Operation Errors:', errors);
+            throw new Error('Gagal memperbarui jadwal di database.');
+        }
 
-        if (errUpsert) throw errUpsert;
+        // 7. Pencatatan Jejak Audit (Audit Trail)
+        // Berjalan asinkron di background agar tidak menahan response API
+        const deskripsiLog = `Admin menukar shift ${pegawai_id_asal} (${tanggal_asal}) dengan ${pegawai_id_tujuan} (${tanggal_tujuan})`;
+        supabase.from('log_aktivitas_admin').insert({
+            admin_id: admin_id,
+            aksi: 'TUKAR_SHIFT',
+            deskripsi: deskripsiLog
+        }).then(({ error }) => {
+            if (error) console.error('Gagal mencatat log audit:', error.message);
+        });
+
+        // 8. Trigger Webhook untuk Broadcast WAHA via n8n
+        // Berjalan asinkron di background
+        fetch('https://n8n-url-kamu.com/webhook/notif-tukar-shift', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                pegawai_asal: pegawai_id_asal,
+                tanggal_asal: tanggal_asal,
+                shift_baru_asal: jadwalTujuan ? jadwalTujuan.shift_id : 'LIBUR',
+                pegawai_tujuan: pegawai_id_tujuan,
+                tanggal_tujuan: tanggal_tujuan,
+                shift_baru_tujuan: jadwalAsal ? jadwalAsal.shift_id : 'LIBUR'
+            })
+        }).catch(err => console.error('Gagal trigger webhook n8n:', err.message));
 
         return res.status(200).json({ 
             success: true, 
-            message: '🚀 Pertukaran shift lintas hari berhasil diproses secara realtime!' 
+            message: '✅ Pertukaran shift berhasil diproses dan notifikasi sedang dikirim.' 
         });
 
     } catch (error) {

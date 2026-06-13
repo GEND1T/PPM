@@ -1,4 +1,4 @@
-const supabase = require('../config/supabaseClient');
+const supabase = require('../../config/supabaseClient');
 
 // ==========================================
 // FITUR BARU: API INPUT SPL (LEMBUR)

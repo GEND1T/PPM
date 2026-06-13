@@ -276,8 +276,8 @@ const tukarShiftKaryawan = async (req, res) => {
         const [jadwalAsalRes, jadwalTujuanRes, pegawaiAsalRes, pegawaiTujuanRes] = await Promise.all([
             supabase.from('jadwal_karyawan').select('id, shift_id').eq('pegawai_id', pegawai_id_asal).eq('tanggal', tanggal_asal).maybeSingle(),
             supabase.from('jadwal_karyawan').select('id, shift_id').eq('pegawai_id', pegawai_id_tujuan).eq('tanggal', tanggal_tujuan).maybeSingle(),
-            supabase.from('pegawai').select('role_id').eq('id', pegawai_id_asal).single(),
-            supabase.from('pegawai').select('role_id').eq('id', pegawai_id_tujuan).single()
+            supabase.from('pegawai').select('jabatan_id').eq('id', pegawai_id_asal).single(),
+            supabase.from('pegawai').select('jabatan_id').eq('id', pegawai_id_tujuan).single()
         ]);
 
         const jadwalAsal = jadwalAsalRes.data;
@@ -290,7 +290,7 @@ const tukarShiftKaryawan = async (req, res) => {
 
         // 3. Validasi Posisi (Role)
         // Memastikan Kasir hanya bertukar dengan Kasir, dsb.
-        if (pegawaiAsalRes.data?.role_id !== pegawaiTujuanRes.data?.role_id) {
+        if (pegawaiAsalRes.data?.jabatan_id !== pegawaiTujuanRes.data?.jabatan_id) {
             return res.status(403).json({ success: false, message: 'Pertukaran ditolak: Role/Posisi kedua pegawai tidak setara.' });
         }
 

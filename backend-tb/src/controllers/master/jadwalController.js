@@ -82,79 +82,128 @@ const createJadwalSatuan = async (req, res) => {
 // 3. CREATE BULK: Generate Jadwal Massal (Dukung Default Shift & Override)
 // =========================================================================
 // Endpoint: POST /api/v1/jadwal/generate-massal
+// POST: Generate / Update Jadwal Massal
 const generateJadwalMassal = async (req, res) => {
     try {
         const { list_pegawai_ids, tanggal_mulai, tanggal_selesai, shift_id } = req.body;
+        const admin_id = req.user?.id || 'admin_system';
 
-        if (!list_pegawai_ids || list_pegawai_ids.length === 0 || !tanggal_mulai || !tanggal_selesai) {
-            return res.status(400).json({ success: false, message: 'Parameter pembuatan massal tidak lengkap.' });
+        if (!list_pegawai_ids || !Array.isArray(list_pegawai_ids) || list_pegawai_ids.length === 0 || !tanggal_mulai || !tanggal_selesai) {
+            return res.status(400).json({ success: false, message: 'Parameter pembuatan massal tidak lengkap/valid.' });
         }
 
-        // 1. Ambil data pegawai beserta default_shift_id-nya dari database
+        // 1. Ambil data pegawai beserta default_shift_id-nya
         const { data: listPegawai, error: errPegawai } = await supabase
             .from('pegawai')
             .select('id, default_shift_id')
-            .in('id', list_pegawai_ids); // Mengambil data khusus untuk ID yang dicentang admin
+            .in('id', list_pegawai_ids);
 
         if (errPegawai) throw errPegawai;
 
         const start = new Date(tanggal_mulai);
         const end = new Date(tanggal_selesai);
-        const listJadwalBaru = [];
+        const formatTanggalMulai = start.toLocaleDateString('en-CA');
+        const formatTanggalSelesai = end.toLocaleDateString('en-CA');
 
-        // 2. Deteksi Mode: Apakah Admin ingin override atau pakai default?
-        // Frontend akan mengirim shift_id berupa string: "" (default), "off" (libur), atau angka "1", "2"
+        // 2. Tentukan target shift_id
         let isOverride = false;
         let targetShiftId = null;
 
         if (shift_id !== undefined && shift_id !== "") {
             isOverride = true;
-            if (shift_id === "off") {
-                targetShiftId = null; // Memaksa menjadi hari libur
-            } else {
-                targetShiftId = parseInt(shift_id); // Memaksa menjadi shift spesifik
+            if (shift_id !== "off") {
+                targetShiftId = parseInt(shift_id);
             }
         }
 
-        // 3. Looping Pembuatan Data Matrix
+        // 3. Pisahkan operasi UPSERT (Masuk) dan DELETE (Libur)
+        const listJadwalUpsert = [];
+        const operasiDeletePromises = [];
+
         for (const pegawai of listPegawai) {
-            // Tentukan shift_id akhir untuk pegawai ini
             const finalShiftId = isOverride ? targetShiftId : pegawai.default_shift_id;
 
-            // Looping tanggal
-            let current = new Date(start);
-            while (current <= end) {
-                const formatTanggal = current.toLocaleDateString('en-CA'); // YYYY-MM-DD
-                
-                listJadwalBaru.push({
-                    pegawai_id: pegawai.id,
-                    tanggal: formatTanggal,
-                    shift_id: finalShiftId // Terapkan shift yang sudah ditentukan
-                });
-                
-                current.setDate(current.getDate() + 1);
+            if (finalShiftId) {
+                // Skenario 1: Pegawai memiliki shift (Masuk). Rakit array untuk UPSERT.
+                let current = new Date(start);
+                while (current <= end) {
+                    listJadwalUpsert.push({
+                        pegawai_id: pegawai.id,
+                        tanggal: current.toLocaleDateString('en-CA'),
+                        shift_id: finalShiftId
+                    });
+                    current.setDate(current.getDate() + 1);
+                }
+            } else {
+                // Skenario 2: Pegawai "off" atau tidak punya default. 
+                // Hapus jadwalnya pada rentang tanggal tersebut sekaligus.
+                operasiDeletePromises.push(
+                    supabase.from('jadwal_karyawan')
+                        .delete()
+                        .eq('pegawai_id', pegawai.id)
+                        .gte('tanggal', formatTanggalMulai)
+                        .lte('tanggal', formatTanggalSelesai)
+                );
             }
         }
 
-        // 4. Eksekusi Tembakan ke Database (Upsert: Timpa jika sudah ada)
-        if (listJadwalBaru.length > 0) {
-            const { error } = await supabase
-                .from('jadwal_karyawan')
-                .upsert(listJadwalBaru, { onConflict: 'pegawai_id,tanggal' }); 
+        // 4. Eksekusi Tembakan ke Database secara Paralel
+        const operasiDatabase = [];
 
-            if (error) throw error;
+        if (listJadwalUpsert.length > 0) {
+            operasiDatabase.push(
+                supabase.from('jadwal_karyawan')
+                    .upsert(listJadwalUpsert, { onConflict: 'pegawai_id,tanggal' })
+            );
         }
+
+        if (operasiDeletePromises.length > 0) {
+            // Masukkan semua eksekusi DELETE ke dalam antrean promise
+            operasiDatabase.push(...operasiDeletePromises);
+        }
+
+        if (operasiDatabase.length > 0) {
+            const results = await Promise.all(operasiDatabase);
+            const errors = results.filter(res => res.error);
+            if (errors.length > 0) {
+                console.error('Mass Database Error:', errors);
+                throw new Error('Gagal mengeksekusi sebagian operasi database massal.');
+            }
+        }
+
+        // 5. Pencatatan Jejak Audit (Asinkron)
+        const aksiDeskripsi = (isOverride && targetShiftId === null) ? 'meliburkan' : 'memperbarui jadwal';
+        supabase.from('log_aktivitas_admin').insert({
+            admin_id: admin_id,
+            aksi: 'GENERATE_MASSAL',
+            deskripsi: `Admin ${aksiDeskripsi} massal untuk ${listPegawai.length} pegawai dari ${formatTanggalMulai} s/d ${formatTanggalSelesai}.`
+        }).then(({ error }) => {
+            if (error) console.error('Gagal mencatat log audit:', error.message);
+        });
+
+        // 6. Trigger Webhook ke n8n untuk Broadcast WAHA (Asinkron)
+        // Disarankan n8n memproses list ini menggunakan node "Loop" (Split In Batches) agar pesan tidak terkirim bersamaan dan menyebabkan limit WA
+        fetch('https://n8n-url-kamu.com/webhook/notif-jadwal-massal', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                list_pegawai_ids: list_pegawai_ids,
+                tanggal_mulai: formatTanggalMulai,
+                tanggal_selesai: formatTanggalSelesai,
+                status_shift: isOverride ? (targetShiftId || 'LIBUR') : 'DEFAULT'
+            })
+        }).catch(err => console.error('Gagal trigger webhook n8n massal:', err.message));
 
         return res.status(200).json({ 
             success: true, 
-            message: `Berhasil men-generate ${listJadwalBaru.length} slot jadwal harian.` 
+            message: `✅ Berhasil memproses jadwal massal untuk ${listPegawai.length} pegawai.` 
         });
+
     } catch (error) {
         console.error('Error generateJadwalMassal:', error.message);
         return res.status(500).json({ success: false, message: 'Gagal men-generate jadwal massal.' });
     }
 };
-
 // =========================================================================
 // 4. UPDATE: Mengubah Shift Karyawan di Hari Tertentu
 // =========================================================================

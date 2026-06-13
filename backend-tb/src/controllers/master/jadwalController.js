@@ -333,6 +333,7 @@ const tukarShiftKaryawan = async (req, res) => {
 // 1. GENERATE HARIAN (Manual Override / Dipanggil Saat Tukar Shift)
 // =========================================================================
 // Endpoint: POST /api/v1/jadwal/harian
+// POST: Generate / Update Jadwal Harian
 const generateJadwalHarian = async (req, res) => {
     try {
         const { pegawai_id, tanggal, shift_id } = req.body;
@@ -341,25 +342,47 @@ const generateJadwalHarian = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Pegawai ID dan Tanggal wajib diisi.' });
         }
 
-        // Menggunakan upsert: Jika jadwal pegawai di tanggal itu sudah ada, update shift_id nya.
-        // Jika belum ada (misal hari libur/kosong), sistem akan membuat baris baru.
-        // Note: shift_id bisa dikirim null jika ingin mengubah hari itu menjadi LIBUR (Day Off)
-        const { data, error } = await supabase
-            .from('jadwal_karyawan')
-            .upsert({
-                pegawai_id,
-                tanggal,
-                shift_id: shift_id || null 
-            }, { onConflict: 'pegawai_id,tanggal' })
-            .select();
+        let dbData = null;
+        let dbError = null;
 
-        if (error) throw error;
+        // Logika Percabangan Berdasarkan Nilai shift_id
+        if (shift_id) {
+            // Skenario 1: Ada shift_id -> Lakukan UPSERT (Insert/Update)
+            const { data, error } = await supabase
+                .from('jadwal_karyawan')
+                .upsert({
+                    pegawai_id,
+                    tanggal,
+                    shift_id
+                }, { onConflict: 'pegawai_id,tanggal' })
+                .select();
+
+            dbData = data;
+            dbError = error;
+        } else {
+            // Skenario 2: shift_id null/kosong (Off/Libur) -> Lakukan DELETE
+            const { data, error } = await supabase
+                .from('jadwal_karyawan')
+                .delete()
+                .eq('pegawai_id', pegawai_id)
+                .eq('tanggal', tanggal)
+                .select(); // Tambahkan select() jika ingin melihat data yang baru saja terhapus
+
+            dbData = data;
+            dbError = error;
+        }
+
+        if (dbError) throw dbError;
+
+        // Sesuaikan pesan respons agar informatif bagi Frontend
+        const keteranganStatus = shift_id ? 'diperbarui' : 'diliburkan';
 
         return res.status(200).json({ 
             success: true, 
-            message: `Jadwal harian tanggal ${tanggal} berhasil diperbarui secara realtime.`,
-            data 
+            message: `Jadwal harian tanggal ${tanggal} berhasil ${keteranganStatus}.`,
+            data: dbData 
         });
+
     } catch (error) {
         console.error('Error generateJadwalHarian:', error.message);
         return res.status(500).json({ success: false, message: 'Gagal memproses jadwal harian.' });

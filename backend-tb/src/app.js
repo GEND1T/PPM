@@ -22,7 +22,7 @@ app.use('/api', apiRoutes);
 // ==========================================
 // V1 API ROUTING (Struktur Baru yang Rapi)
 // ==========================================
-const v1Routes = require('./routes/index');
+const v1Routes = require('./routes/index'); 
 app.use('/api/v1', v1Routes);
 
 const cronRoutes = require('./routes/cronRoutes');

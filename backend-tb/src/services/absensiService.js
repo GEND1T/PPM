@@ -41,7 +41,6 @@ async function prosesLogMesin(log) {
         return; 
     }
 
-    // Ambil Aturan Shift berdasarkan jadwal hari ini
     const { data: shift } = await supabase
         .from('shifts')
         .select('*')
@@ -60,17 +59,17 @@ async function prosesLogMesin(log) {
 
     const targetMasuk = timeToMinutes(shift.jam_masuk);
     const targetPulang = timeToMinutes(shift.jam_pulang);
-    const batasToleransi = targetMasuk + (shift.batas_toleransi_menit || 0);
+    const batasToleransi = targetMasuk + shift.batas_toleransi_menit;
 
     // --- LOGIKA INSERT (MASUK PERTAMA KALI) ---
+    
     if (!absenHariIni) {
         
-        // LAPIS 3 KEAMANAN: ENTRY DENIAL (Cek apakah fitur Lockout Masuk aktif)
-        // Fitur aktif HANYA jika batas_akhir_scan_masuk_menit tidak null
-        const isLockoutMasukActive = shift.batas_akhir_scan_masuk_menit !== null && shift.batas_akhir_scan_masuk_menit !== undefined;
-        
-        if (isLockoutMasukActive) {
-            const batasCutOffMasuk = targetMasuk + shift.batas_akhir_scan_masuk_menit;
+        // LAPIS 3 KEAMANAN: ENTRY DENIAL (Tolak absen jika terlalu siang)
+        // Mengecek apakah batas akhir scan masuk diaktifkan (tidak bernilai 0)
+        if (shift.batas_akhir_scan_masuk_menit !== 0) {
+            // Gunakan ?? agar nilai 0 tidak tertimpa 120 (walau 0 sudah dicegat di atas)
+            const batasCutOffMasuk = targetMasuk + (shift.batas_akhir_scan_masuk_menit ?? 120);
             if (menitScan > batasCutOffMasuk) {
                 console.log(`[WARNING] Scan ditolak! Melewati batas akhir absen masuk: PIN ${pinMesin} jam ${jam}`);
                 return; // Abaikan proses insert. Pegawai dianggap tidak masuk/alfa.
@@ -79,7 +78,7 @@ async function prosesLogMesin(log) {
 
         let statusMasuk = 'late';
         let bonusDisiplin = 0;
-        let dendaTerlambat = 0;
+        let dendaTerlambat = 0; 
 
         if (menitScan <= batasToleransi) {
             statusMasuk = menitScan < targetMasuk ? 'intime' : 'ontime';
@@ -89,11 +88,11 @@ async function prosesLogMesin(log) {
             if (shift.is_potong_gaji_terlambat) {
                 const menitTelat = menitScan - targetMasuk;
                 
-                // CEK MODE DENDA: Tetap vs Berkali Lipat
+                // PENGKONDISIAN JENIS DENDA: TETAP vs MULTIPLIER (PER MENIT)
                 if (shift.istetap) {
                     dendaTerlambat = shift.denda_terlambat_per_menit || 0; // Denda flat/tetap
                 } else {
-                    dendaTerlambat = menitTelat * (shift.denda_terlambat_per_menit || 0); // Denda dikali menit
+                    dendaTerlambat = menitTelat * (shift.denda_terlambat_per_menit || 0); // Denda progresif
                 }
                 
                 console.log(`[PENALTI] PIN ${pinMesin} telat ${menitTelat} menit. Denda Pagi: Rp ${dendaTerlambat}`);
@@ -119,7 +118,6 @@ async function prosesLogMesin(log) {
 
     const menitAwal = timeToMinutes(absenHariIni.waktu_awal);
 
-    // [FITUR] ANTI-SPAM DOUBLE TAP (COOLDOWN 30 MENIT)
     if (menitScan - menitAwal < 30) {
         console.log(`[INFO] Scan double-tap/spam diabaikan: PIN ${pinMesin} jam ${jam}`);
         return; 
@@ -133,30 +131,29 @@ async function prosesLogMesin(log) {
         .eq('tanggal', tanggal)
         .maybeSingle();
 
-    // 2. LAPIS 1: EKSEKUSI CUT-OFF PULANG (Cek apakah fitur Lockout Pulang aktif)
-    const isLockoutPulangActive = shift.batas_akhir_scan_pulang_menit !== null && shift.batas_akhir_scan_pulang_menit !== undefined;
+    // 2. TENTUKAN CUT-OFF DINAMIS
+    const batasCutOffPulang = targetPulang + shift.batas_akhir_scan_pulang_menit;
+    let batasCutOffAktual = batasCutOffPulang;
 
-    if (isLockoutPulangActive) {
-        let batasCutOffAktual = targetPulang + shift.batas_akhir_scan_pulang_menit;
+    if (spl) {
+        const cutOffLembur = targetPulang + spl.menit_lembur_diizinkan + 60; 
+        batasCutOffAktual = Math.max(batasCutOffPulang, cutOffLembur);
+    }
 
-        // Jika ada lembur, perpanjang batas cut-off
-        if (spl) {
-            const cutOffLembur = targetPulang + spl.menit_lembur_diizinkan + 60; 
-            batasCutOffAktual = Math.max(batasCutOffAktual, cutOffLembur);
-        }
-
+    // 3. LAPIS 1: EKSEKUSI CUT-OFF
+    // Mengecek apakah batas akhir scan pulang diaktifkan (tidak bernilai 0)
+    if (shift.batas_akhir_scan_pulang_menit !== 0) {
         if (menitScan > batasCutOffAktual) {
             console.log(`[INFO] Scan pulang ditolak (melebihi cut-off aktual): PIN ${pinMesin} jam ${jam}`);
             return; 
         }
     }
 
-    // 3. LAPIS 2: KALKULASI PULANG AWAL & LEMBUR 
+    // 4. LAPIS 2: KALKULASI PULANG AWAL & LEMBUR 
     let menitLemburMesin = 0;
     let menitLemburDiakui = 0;
     let upahLembur = 0;
     
-    // [FITUR] AUTO-RECOVERY HAK PAGI HARI
     let statusPagi = 'late';
     let hakBonusPagi = 0;
     
@@ -178,12 +175,13 @@ async function prosesLogMesin(log) {
             const menitBolos = targetPulang - menitScan;
             if (menitBolos > (shift.toleransi_pulang_awal_menit || 0)) {
                 
-                // CEK MODE DENDA: Tetap vs Berkali Lipat
+                // PENGKONDISIAN JENIS DENDA: TETAP vs MULTIPLIER (PER MENIT)
                 if (shift.istetap) {
                     dendaPulangAwal = shift.denda_pulang_awal_per_menit || 0; // Denda flat/tetap
                 } else {
-                    dendaPulangAwal = menitBolos * (shift.denda_pulang_awal_per_menit || 0); // Denda dikali menit
+                    dendaPulangAwal = menitBolos * (shift.denda_pulang_awal_per_menit || 0); // Denda progresif
                 }
+                
             }
         }
     }
@@ -200,7 +198,7 @@ async function prosesLogMesin(log) {
     
     const dendaHariIni = (absenHariIni.denda || 0) + dendaPulangAwal;
 
-    // 4. UPDATE DATABASE ABSENSI
+    // 5. UPDATE DATABASE ABSENSI
     const { error: updateError } = await supabase.from('absensi').update({
         waktu_akhir: jam,
         status: statusAkhir,

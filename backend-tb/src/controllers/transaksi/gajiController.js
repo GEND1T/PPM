@@ -207,6 +207,7 @@ const generateGajiMassal = async (req, res) => {
                     throw new Error('Slip Gaji sudah berstatus LUNAS. Data dikunci.');
                 }
 
+                // ... Lanjutkan ke --- 1. HITUNG TABUNGAN LOYALITAS ---
                 // --- 1. HITUNG TABUNGAN LOYALITAS (Tetap Dipertahankan) ---
                 let tabunganLoyalitas = 0;
                 if (pegawai.tanggal_bergabung) {
@@ -309,15 +310,18 @@ const generateGajiMassal = async (req, res) => {
                 let gajiBersih = (upahDasar + totalBonusCair) - totalPotonganCair;
                 if (gajiBersih < 0) gajiBersih = 0; // Proteksi agar gaji tidak minus
 
-                // --- 4. SIMPAN KE TABEL PENGGAJIAN MENGGUNAKAN UPSERT ---
+                // --- 4. SIMPAN KE TABEL PENGGAJIAN ---
                 const { error: errSaveGaji } = await supabase
                     .from('penggajian')
                     .upsert([{ 
-                        // Jika sudah punya ID dari pengecekan di atas, kita tidak perlu menyertakannya
-                        // karena onConflict akan otomatis menanganinya
                         pegawai_id: pegawai.id, 
                         periode_bulan, 
                         periode_tahun, 
+                        
+                        // BUKA KOMENTAR DAN TAMBAHKAN DUA BARIS INI:
+                        tanggal_awal_periode: tanggal_mulai, 
+                        tanggal_akhir_periode: tanggal_selesai,
+                        
                         gaji_dasar: upahDasar,
                         rincian_bonus: rincianBonus,
                         rincian_potongan: rincianPotongan,
@@ -325,9 +329,10 @@ const generateGajiMassal = async (req, res) => {
                         total_bonus: totalBonusCair,
                         total_potongan: totalPotonganCair,
                         total_gaji: gajiBersih, 
-                        status_pembayaran: 'Pending' // Selalu kembalikan ke Pending saat di-generate ulang
-                    }], { 
-                        onConflict: 'pegawai_id,periode_bulan,periode_tahun' // Tuliskan persis kolom pembuat constraint-nya
+                        status_pembayaran: 'Pending'
+                    }], {
+                        // Pastikan onConflict sesuai dengan unique constraint Anda di DB
+                        onConflict: 'pegawai_id,periode_bulan,periode_tahun' 
                     });
 
                 if (errSaveGaji) throw errSaveGaji;

@@ -81,7 +81,7 @@ const inputPencapaianHarian = async (req, res) => {
                 pegawai_id, 
                 master_target_id, 
                 jumlah_pencapaian, 
-                nominal_total_riil 
+                nominal_total_riil : nominalTotalRiil
             }], { 
                 onConflict: 'tanggal,pegawai_id,master_target_id' 
             })

@@ -15,6 +15,7 @@ const gajiRoutes = require('./transaksi/gajiRoutes');
 const jadwalRoutes = require('./master/jadwalRoutes');
 const splRoutes = require('./transaksi/splRoutes');
 const targetRoutes = require('./transaksi/targetRoutes');
+const kasbonRoutes = require('./transaksi/kasbonRoutes');
 
 
 // Daftarkan rute dan pasang gembok JWT secara global untuk rute ini
@@ -28,5 +29,6 @@ router.use('/gaji', verifikasiToken, gajiRoutes);
 router.use('/jadwal', verifikasiToken, jadwalRoutes);
 router.use('/lembur', verifikasiToken, splRoutes);
 router.use('/target', verifikasiToken, targetRoutes);
+router.use('/kasbon', verifikasiToken, kasbonRoutes);
 
 module.exports = router;

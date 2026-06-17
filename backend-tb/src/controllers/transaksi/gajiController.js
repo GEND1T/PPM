@@ -278,37 +278,62 @@ const generateGajiMassal = async (req, res) => {
                     }
                 }
 
-                // Rakit Komponen
+                // ... (Kode sebelumnya: Perhitungan dendaSistemPeriodeIni & dendaAlphaVoid) ...
+
+                // =======================================================
+                // [BARU] LOGIKA TARIK DAN POTONG KASBON
+                // =======================================================
+                const { data: daftarKasbonAktif } = await supabase
+                    .from('kasbon')
+                    .select('id, keterangan_pinjaman, nominal_cicilan_per_gajian, sisa_pinjaman')
+                    .eq('pegawai_id', pegawai.id)
+                    .eq('status', 'Disetujui')
+                    .gt('sisa_pinjaman', 0);
+
+                let totalPotonganKasbon = 0;
+                let detailKasbonTerpotong = [];
+
+                if (daftarKasbonAktif && daftarKasbonAktif.length > 0) {
+                    for (const kasbon of daftarKasbonAktif) {
+                        // Cerdas: Potong sesuai cicilan, JIKA sisa utangnya tinggal sedikit, potong sisanya saja.
+                        const potonganRiil = Math.min(kasbon.nominal_cicilan_per_gajian, kasbon.sisa_pinjaman);
+                        
+                        totalPotonganKasbon += potonganRiil;
+                        
+                        // Simpan detail ini ke dalam JSONB untuk ditampilkan di cetak Slip Gaji
+                        detailKasbonTerpotong.push({
+                            kasbon_id: kasbon.id,
+                            keterangan: kasbon.keterangan_pinjaman,
+                            nominal_potongan: potonganRiil
+                        });
+                    }
+                }
+
+                // --- 3. RAKIT KOMPONEN JSON ---
                 const rincianBonus = {
                     bonus_kedisiplinan_harian: bonusDisiplinPeriodeIni,
-                    bonus_kerapian_harian: bonusKerapianPeriodeIni,
                     uang_lembur_akumulasi: Math.round(uangLemburPeriodeIni)
                 };
 
                 const rincianPotongan = {
                     denda_sistem_absensi: dendaSistemPeriodeIni,
-                    denda_alpha_void: dendaAlphaVoid
-                };
-
-                // --- 3. AMBIL INFO TABUNGAN DARI CRON JOB UNTUK SLIP ---
-                const { data: recordTHR } = await supabase
-                    .from('rekap_tahunan_hari_raya')
-                    .select('total_bonus_mingguan_terkumpul, nominal_bonus_lembur_tahunan')
-                    .eq('pegawai_id', pegawai.id)
-                    .eq('periode_tahun', periode_tahun)
-                    .maybeSingle();
-
-                const infoTabungan = {
-                    tabungan_loyalitas_akumulasi: tabunganLoyalitas,
-                    tabungan_mingguan_terkumpul: recordTHR?.total_bonus_mingguan_terkumpul || 0,
-                    tabungan_lembur_tahunan_terkumpul: recordTHR?.nominal_bonus_lembur_tahunan || 0
+                    denda_alpha_void: dendaAlphaVoid,
+                    potongan_kasbon: totalPotonganKasbon, // Masukkan ke rincian
+                    detail_kasbon: detailKasbonTerpotong  // Metadata kasbon
                 };
 
                 const totalBonusCair = Object.values(rincianBonus).reduce((a, b) => a + (b || 0), 0);
-                const totalPotonganCair = Object.values(rincianPotongan).reduce((a, b) => a + (b || 0), 0);
+                // Hitung total potongan murni (tanpa objek detail_kasbon)
+                const totalPotonganCair = dendaSistemPeriodeIni + dendaAlphaVoid + totalPotonganKasbon;
                 
                 let gajiBersih = (upahDasar + totalBonusCair) - totalPotonganCair;
-                if (gajiBersih < 0) gajiBersih = 0; // Proteksi agar gaji tidak minus
+
+                // PROTEKSI GAJI MINUS KARENA KASBON TERLALU BESAR
+                if (gajiBersih < 0) {
+                    // Jika gaji minus, kita batalkan potongan kasbon sebagian atau sesuaikan 
+                    // agar gaji 0 (Atau biarkan 0 jika memang utangnya lebih besar dari gaji)
+                    gajiBersih = 0; 
+                }
 
                 // --- 4. SIMPAN KE TABEL PENGGAJIAN ---
                 const { error: errSaveGaji } = await supabase

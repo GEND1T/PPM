@@ -109,8 +109,8 @@ const getPencapaianHarian = async (req, res) => {
             .from('pencapaian_target_harian')
             .select(`
                 id, tanggal, jumlah_pencapaian, nominal_total_riil,
-                pegawai(nama),
-                master_target(nama_target, harga_satuan)
+                pegawai(id, nama),
+                master_target(id, nama_target, harga_satuan)
             `)
             .order('tanggal', { ascending: false });
 

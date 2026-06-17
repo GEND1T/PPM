@@ -9,7 +9,7 @@ const createShift = async (req, res) => {
             kode_shift, jam_masuk, jam_pulang, batas_toleransi_menit,
             batas_akhir_scan_masuk_menit, batas_akhir_scan_pulang_menit,
             is_potong_gaji_terlambat, denda_terlambat_per_menit,
-            is_potong_gaji_pulang_awal, toleransi_pulang_awal_menit, denda_pulang_awal_per_menit
+            is_potong_gaji_pulang_awal, toleransi_pulang_awal_menit, denda_pulang_awal_per_menit,istetap
         } = req.body;
 
         if (!kode_shift || !jam_masuk || !jam_pulang) {
@@ -22,7 +22,7 @@ const createShift = async (req, res) => {
                 kode_shift, jam_masuk, jam_pulang, batas_toleransi_menit,
                 batas_akhir_scan_masuk_menit, batas_akhir_scan_pulang_menit,
                 is_potong_gaji_terlambat, denda_terlambat_per_menit,
-                is_potong_gaji_pulang_awal, toleransi_pulang_awal_menit, denda_pulang_awal_per_menit
+                is_potong_gaji_pulang_awal, toleransi_pulang_awal_menit, denda_pulang_awal_per_menit,istetap
             }])
             .select()
             .single();

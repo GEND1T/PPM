@@ -4,7 +4,7 @@ const router = express.Router();
 const gajiController = require('../../controllers/transaksi/gajiController');
 
 // --- Rute Gaji ---
-router.get('/', gajiController.getAllGaji);
+router.get('/', gajiController.getRekapGaji);
 router.post('/generate-massal', gajiController.generateGajiMassal);
 router.patch('/:id/lunas', gajiController.pelunasanGaji);
 

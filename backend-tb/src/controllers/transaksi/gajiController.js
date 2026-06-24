@@ -556,5 +556,75 @@ const pelunasanGaji = async (req, res) => {
     }
 };
 
+const getRekapGaji = async (req, res) => {
+    try {
+        const { tahun, bulan } = req.query;
 
-module.exports = { pelunasanGaji, getAllGaji, getRekapMingguan, getRekapHarian, generateGajiMassal };
+        // 1. Validasi Parameter Wajib
+        if (!tahun) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Parameter tahun wajib disertakan.' 
+            });
+        }
+
+        // 2. Bangun Query Supabase (Pilih kolom dengan LENGKAP)
+        let query = supabase
+            .from('penggajian')
+            .select(`
+                id,
+                periode_bulan,
+                periode_tahun,
+                gaji_dasar,
+                total_bonus,
+                total_potongan,
+                total_gaji,
+                status_pembayaran,
+                tanggal_awal_periode,
+                tanggal_akhir_periode,
+                
+                detail_harian,        
+                rincian_bonus,        
+                rincian_potongan,     
+                informasi_tabungan,   
+                
+                pegawai (
+                    nama,
+                    jabatan (
+                        nama_jabatan,
+                        tipe_penggajian
+                    )
+                )
+            `)
+            .order('id', { ascending: false }); // Urutkan dari yang terbaru
+
+        // 3. Terapkan Filter Berdasarkan Request Frontend
+        query = query.eq('periode_tahun', tahun);
+        
+        // Jika bulan dikirim (dan bukan 0), maka filter berdasarkan bulan
+        if (bulan && bulan !== '0') {
+            query = query.eq('periode_bulan', bulan);
+        }
+
+        // 4. Eksekusi Query
+        const { data, error } = await query;
+
+        if (error) throw error;
+
+        // 5. Kembalikan Response ke Frontend
+        return res.status(200).json({ 
+            success: true, 
+            message: 'Data rekap gaji berhasil diambil.',
+            data: data 
+        });
+
+    } catch (error) {
+        console.error('Error getRekapGaji:', error.message);
+        return res.status(500).json({ 
+            success: false, 
+            message: 'Gagal mengambil data rekap gaji dari server.' 
+        });
+    }
+};
+
+module.exports = { pelunasanGaji, getAllGaji, getRekapMingguan, getRekapHarian, generateGajiMassal,getRekapGaji };

@@ -5,9 +5,8 @@ const gajiController = require('../../controllers/transaksi/gajiController');
 
 // --- Rute Gaji ---
 router.get('/', gajiController.getAllGaji);
-router.get('/mingguan', gajiController.getRekapMingguan);
-router.get('/harian', gajiController.getRekapHarian);
 router.post('/generate-massal', gajiController.generateGajiMassal);
+router.patch('/:id/lunas', gajiController.pelunasanGaji);
 
 
 module.exports = router;

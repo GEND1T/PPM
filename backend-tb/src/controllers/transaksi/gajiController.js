@@ -164,6 +164,11 @@ const konversiKeMenit = (timeStr) => {
 //     const target = konversiKeMenit(jamPulangShift);
 //     return scan < target ? target - scan : 0;
 // };
+// Helper untuk mengubah "2026-05-05" menjadi "Senin", "Selasa", dll.
+const getNamaHari = (tanggalStr) => {
+    const hari = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+    return hari[new Date(tanggalStr).getDay()];
+};
 
 const generateGajiMassal = async (req, res) => {
     try {
@@ -279,24 +284,65 @@ const generateGajiMassal = async (req, res) => {
                 let totalHariHadir = 0;
                 const DENDA_ALPHA_PER_HARI = aturanJabatan.upah_per_kehadiran || 0; 
 
+                // Siapkan array penampung rincian harian
+                let arrayDetailHarian = [];
+
+                if (isTarget) {
+                    // --- LOGIKA TIPE TARGET ---
+                    // Pastikan query mengambil relasi master_target untuk nama dan harga
+                    const { data: targetData } = await supabase
+                        .from('pencapaian_target_harian')
+                        .select('tanggal, jumlah_pencapaian, nominal_total_riil, master_target(nama_target, harga_satuan)')
+                        .eq('pegawai_id', pegawai.id)
+                        .gte('tanggal', tanggal_mulai)
+                        .lte('tanggal', tanggal_selesai)
+                        .order('tanggal', { ascending: true });
+
+                    if (targetData && targetData.length > 0) {
+                        for (const target of targetData) {
+                            const nominalRiil = Number(target.nominal_total_riil || 0);
+                            upahDasar += nominalRiil;
+
+                            // Push ke detail harian
+                            arrayDetailHarian.push({
+                                hari_tanggal: getNamaHari(target.tanggal),
+                                nama_target: target.master_target?.nama_target || '-',
+                                harga_satuan: target.master_target?.harga_satuan || 0,
+                                capaian: target.jumlah_pencapaian || 0,
+                                total_harian: nominalRiil
+                            });
+                        }
+                    }
+                }
+
+                // --- LOGIKA TIPE HARIAN & BULANAN (Absensi) ---
                 if (dataAbsen && dataAbsen.length > 0) {
                     for (const absen of dataAbsen) {
                         if (absen.status === 'void' || absen.status === 'alfa') {
-                            // Denda Alpha biasanya hanya berlaku untuk pegawai Bulanan
                             if (isBulanan) dendaAlphaVoid += DENDA_ALPHA_PER_HARI; 
                         } else {
                             totalHariHadir++;
-
-                            // Akumulasi upah harian HANYA JIKA tipenya 'Harian'
-                            if (isHarian) {
-                                upahDasar += (absen.upah_harian || 0);
-                            }
+                            if (isHarian) upahDasar += (absen.upah_harian || 0);
                             
-                            // Pekerja Target & Harian tetap mendapat bonus/denda disiplin jika mesin absen menyediakannya
                             bonusDisiplinPeriodeIni += (absen.bonus_kedisiplinan || 0);
                             bonusKerapianPeriodeIni += (absen.bonus_kerapian || 0);
                             uangLemburPeriodeIni += (absen.upah_lembur || 0);
                             dendaSistemPeriodeIni += (absen.denda || 0);
+
+                            // JIKA TIPE HARIAN, Push rekam jejak harian
+                            if (isHarian) {
+                                const totalHarian = (absen.upah_harian || 0) + (absen.bonus_kedisiplinan || 0) + (absen.bonus_kerapian || 0) + (absen.upah_lembur || 0);
+                                arrayDetailHarian.push({
+                                    hari_tanggal: getNamaHari(absen.tanggal),
+                                    gaji_kehadiran: absen.upah_harian || 0,
+                                    t_absensi: absen.bonus_kedisiplinan || 0,
+                                    t_kerapian: absen.bonus_kerapian || 0,
+                                    sortir: 0, // Isi 0 jika belum ada logika sortir
+                                    lembur: absen.upah_lembur || 0,
+                                    bonus: 0,  // Isi 0 jika belum ada logika bonus lain
+                                    total_harian: totalHarian
+                                });
+                            }
                         }
                     }
                 }
@@ -386,6 +432,7 @@ const generateGajiMassal = async (req, res) => {
                         tanggal_awal_periode: tanggal_mulai, 
                         tanggal_akhir_periode: tanggal_selesai,
                         gaji_dasar: upahDasar,
+                        detail_harian: arrayDetailHarian,
                         rincian_bonus: rincianBonus,
                         rincian_potongan: rincianPotongan,
                         informasi_tabungan: infoTabungan, 

@@ -8,6 +8,4 @@ router.post('/', verifikasiToken, bonuscustom.createBonusCustom);
 router.get('/', verifikasiToken, bonuscustom.getBonusCustom);
 router.delete('/:id', verifikasiToken, bonuscustom.deleteBonusCustom);
 
-
-
 module.exports = router;

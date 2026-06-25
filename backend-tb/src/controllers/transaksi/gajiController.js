@@ -354,13 +354,45 @@ const generateGajiMassal = async (req, res) => {
                     }
                 }
 
-                // 8. RAKIT KOMPONEN JSON
+                // =======================================================
+                // [FITUR BARU] TARIK BONUS MANUAL / CUSTOM
+                // =======================================================
+                const { data: daftarBonusCustom } = await supabase
+                    .from('bonus_custom_pegawai')
+                    .select('keterangan, nominal')
+                    .eq('pegawai_id', pegawai.id)
+                    .gte('tanggal_diberikan', tanggal_mulai)
+                    .lte('tanggal_diberikan', tanggal_selesai);
+
+                let totalBonusCustom = 0;
+                let detailBonusCustom = [];
+
+                if (daftarBonusCustom && daftarBonusCustom.length > 0) {
+                    for (const bonus of daftarBonusCustom) {
+                        totalBonusCustom += Number(bonus.nominal);
+                        detailBonusCustom.push({
+                            keterangan: bonus.keterangan,
+                            nominal: Number(bonus.nominal)
+                        });
+                    }
+                }
+
+                // --- 8. RAKIT KOMPONEN JSON ---
                 const rincianBonus = {
                     bonus_kedisiplinan_harian: bonusDisiplinPeriodeIni,
                     bonus_kerapian_harian: bonusKerapianPeriodeIni,
                     uang_lembur_akumulasi: Math.round(uangLemburPeriodeIni),
-                    bonus_kehadiran_mingguan: bonusKehadiranMingguan
+                    bonus_kehadiran_mingguan: bonusKehadiranMingguan,
+                    // SUNTIKAN BONUS CUSTOM
+                    total_bonus_custom: totalBonusCustom,
+                    detail_bonus_custom: detailBonusCustom 
                 };
+
+                // Pastikan perhitungan Total Bonus Cair ikut menjumlahkan bonus custom
+                const totalBonusCair = Object.values(rincianBonus).reduce((a, b) => {
+                    // Cek jika valuenya number (abaikan array/object seperti detail_bonus_custom)
+                    return typeof b === 'number' ? a + b : a;
+                }, 0);
 
                 const rincianPotongan = {
                     denda_sistem_absensi: dendaSistemPeriodeIni,
@@ -369,7 +401,6 @@ const generateGajiMassal = async (req, res) => {
                     detail_kasbon: detailKasbonTerpotong  
                 };
 
-                const totalBonusCair = Object.values(rincianBonus).reduce((a, b) => a + (b || 0), 0);
                 const totalPotonganCair = dendaSistemPeriodeIni + dendaAlphaVoid + totalPotonganKasbon;
                 let gajiBersih = (upahDasar + totalBonusCair) - totalPotonganCair;
                 if (gajiBersih < 0) gajiBersih = 0; 

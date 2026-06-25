@@ -267,10 +267,11 @@ const generateGajiMassal = async (req, res) => {
                 // --- 2. TARIK DATA ABSENSI ---
                 const { data: dataAbsen, error: errAbsen } = await supabase
                     .from('absensi')
-                    .select('status, upah_harian, bonus_kedisiplinan, bonus_kerapian, denda, upah_lembur') 
+                    .select('tanggal, status, upah_harian, bonus_kedisiplinan, bonus_kerapian, denda, upah_lembur') // <--- TAMBAHKAN TANGGAL DI SINI
                     .eq('pegawai_id', pegawai.id)
                     .gte('tanggal', tanggal_mulai)
-                    .lte('tanggal', tanggal_selesai);
+                    .lte('tanggal', tanggal_selesai)
+                    .order('tanggal', { ascending: true }); // Tambahkan order agar urut dari Senin-Sabtu
 
                 if (errAbsen) throw errAbsen;
                 
@@ -285,11 +286,34 @@ const generateGajiMassal = async (req, res) => {
                 const DENDA_ALPHA_PER_HARI = aturanJabatan.upah_per_kehadiran || 0; 
 
                 // Siapkan array penampung rincian harian
+                // --- [UPDATE] PEMBENTUKAN DETAIL HARIAN (Gabung Target & Absen) ---
                 let arrayDetailHarian = [];
+                const getNamaHari = (tgl) => ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"][new Date(tgl).getDay()];
+
+                // Buat map absensi untuk pencarian cepat berdasarkan tanggal
+                const mapAbsen = {};
+                if (dataAbsen && dataAbsen.length > 0) {
+                    for (const absen of dataAbsen) {
+                        mapAbsen[absen.tanggal] = absen;
+                        
+                        // Jika tipenya HARIAN, langsung push ke array
+                        if (isHarian && absen.status !== 'void' && absen.status !== 'alfa') {
+                            const totalHarian = (absen.upah_harian || 0) + (absen.bonus_kedisiplinan || 0) + (absen.bonus_kerapian || 0) + (absen.upah_lembur || 0);
+                            arrayDetailHarian.push({
+                                hari_tanggal: getNamaHari(absen.tanggal),
+                                gaji_kehadiran: absen.upah_harian || 0,
+                                t_absensi: absen.bonus_kedisiplinan || 0,
+                                t_kerapian: absen.bonus_kerapian || 0,
+                                sortir: 0, 
+                                lembur: absen.upah_lembur || 0,
+                                bonus: 0, 
+                                total_harian: totalHarian
+                            });
+                        }
+                    }
+                }
 
                 if (isTarget) {
-                    // --- LOGIKA TIPE TARGET ---
-                    // Pastikan query mengambil relasi master_target untuk nama dan harga
                     const { data: targetData } = await supabase
                         .from('pencapaian_target_harian')
                         .select('tanggal, jumlah_pencapaian, nominal_total_riil, master_target(nama_target, harga_satuan)')
@@ -300,16 +324,25 @@ const generateGajiMassal = async (req, res) => {
 
                     if (targetData && targetData.length > 0) {
                         for (const target of targetData) {
+                            const tgl = target.tanggal;
+                            const absenHariIni = mapAbsen[tgl] || {}; // Ambil data absen di tanggal ini jika ada
+                            
                             const nominalRiil = Number(target.nominal_total_riil || 0);
-                            upahDasar += nominalRiil;
-
-                            // Push ke detail harian
+                            const tAbs = absenHariIni.bonus_kedisiplinan || 0;
+                            const tKrp = absenHariIni.bonus_kerapian || 0;
+                            const lembur = absenHariIni.upah_lembur || 0;
+                            
                             arrayDetailHarian.push({
-                                hari_tanggal: getNamaHari(target.tanggal),
+                                hari_tanggal: getNamaHari(tgl),
                                 nama_target: target.master_target?.nama_target || '-',
                                 harga_satuan: target.master_target?.harga_satuan || 0,
                                 capaian: target.jumlah_pencapaian || 0,
-                                total_harian: nominalRiil
+                                t_absensi: tAbs,
+                                t_kerapian: tKrp,
+                                lembur: lembur,
+                                sortir: 0,
+                                bonus: 0,
+                                total_harian: nominalRiil + tAbs + tKrp + lembur
                             });
                         }
                     }
@@ -360,6 +393,7 @@ const generateGajiMassal = async (req, res) => {
                 // =======================================================
                 // 🔒 LOGIKA KASBON (Aman: Hanya Membaca, Tidak Mengurangi DB)
                 // =======================================================
+                // --- [UPDATE] LOGIKA KASBON (Menyimpan Sisa Pinjaman) ---
                 const { data: daftarKasbonAktif } = await supabase
                     .from('kasbon')
                     .select('id, keterangan_pinjaman, nominal_cicilan_per_gajian, sisa_pinjaman')
@@ -369,17 +403,19 @@ const generateGajiMassal = async (req, res) => {
 
                 let totalPotonganKasbon = 0;
                 let detailKasbonTerpotong = [];
+                let sisaHutangTerakhir = 0; // Menyimpan sisa utang setelah dipotong
 
                 if (daftarKasbonAktif && daftarKasbonAktif.length > 0) {
                     for (const kasbon of daftarKasbonAktif) {
                         const potonganRiil = Math.min(kasbon.nominal_cicilan_per_gajian, kasbon.sisa_pinjaman);
                         totalPotonganKasbon += potonganRiil;
+                        sisaHutangTerakhir += (kasbon.sisa_pinjaman - potonganRiil); // Hitung sisa
                         
-                        // Metadata ini dikemas ke dalam JSON agar nanti bisa dibaca oleh fungsi pelunasanGaji
                         detailKasbonTerpotong.push({
                             kasbon_id: kasbon.id,
                             keterangan: kasbon.keterangan_pinjaman,
-                            nominal_potongan: potonganRiil
+                            nominal_potongan: potonganRiil,
+                            sisa_pinjaman_terkini: kasbon.sisa_pinjaman - potonganRiil
                         });
                     }
                 }

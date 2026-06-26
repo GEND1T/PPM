@@ -1,19 +1,15 @@
 const express = require('express');
 const router = express.Router();
 
-// Import controller
-const {
-    createKasbon,
-    getKasbon,
-    updateStatusKasbon,
-    deleteKasbon
-} = require('../../controllers/transaksi/kasbonController');
+const casbonController = require('../../controllers/transaksi/kasbonController');
+const verifikasiToken = require('../../middleware/authMiddleware');
 
 
 // Endpoint CRUD Kasbon
-router.post('/',  createKasbon);               // CREATE: Ajukan kasbon baru
-router.get('/',  getKasbon);                   // READ: Ambil daftar kasbon
-router.patch('/:id/status',  updateStatusKasbon); // UPDATE: Setuju/Tolak status kasbon
-router.delete('/:id',  deleteKasbon);          // DELETE: Hapus kasbon
+router.post('/', verifikasiToken, casbonController.createKasbon);                
+router.get('/', verifikasiToken, casbonController.getKasbon);                    
+router.patch('/:id/status', verifikasiToken, casbonController.updateStatusKasbon); 
+router.delete('/:id', verifikasiToken, casbonController.deleteKasbon);          
+router.patch('/:id/bayar-manual', verifikasiToken, casbonController.bayarCicilanManual);
 
 module.exports = router;

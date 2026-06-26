@@ -148,18 +148,18 @@ const deleteKasbon = async (req, res) => {
 // =========================================================================
 const bayarCicilanManual = async (req, res) => {
     try {
-        const { id } = req.params; // ID Kasbon yang akan dibayar
-        const { nominal_bayar, tanggal_pembayaran, metode_pembayaran } = req.body;
+        const { id } = req.params; // ID Kasbon
+        const { nominal_bayar, tanggal_pembayaran, metode_pembayaran, keterangan } = req.body;
 
-        // 1. Validasi input
+        // 1. Validasi input dasar
         if (!nominal_bayar || nominal_bayar <= 0) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Nominal pembayaran tidak valid. Harus lebih dari 0.' 
-            });
+            return res.status(400).json({ success: false, message: 'Nominal pembayaran tidak valid.' });
+        }
+        if (!tanggal_pembayaran) {
+            return res.status(400).json({ success: false, message: 'Tanggal pembayaran wajib diisi.' });
         }
 
-        // 2. Ambil data kasbon saat ini untuk mengecek sisa pinjaman
+        // 2. Ambil data kasbon saat ini
         const { data: kasbonTarget, error: errFetch } = await supabase
             .from('kasbon')
             .select('sisa_pinjaman, status')
@@ -170,23 +170,22 @@ const bayarCicilanManual = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Data kasbon tidak ditemukan.' });
         }
 
-        // 3. Validasi status dan nominal pembayaran
+        // 3. Validasi status dan batas nominal
         if (kasbonTarget.status === 'Lunas' || kasbonTarget.sisa_pinjaman <= 0) {
-            return res.status(400).json({ success: false, message: 'Gagal. Kasbon ini sudah berstatus Lunas.' });
+            return res.status(400).json({ success: false, message: 'Kasbon ini sudah Lunas.' });
         }
-
         if (nominal_bayar > kasbonTarget.sisa_pinjaman) {
             return res.status(400).json({ 
                 success: false, 
-                message: `Nominal bayar melebihi batas. Sisa utang saat ini hanya Rp ${kasbonTarget.sisa_pinjaman}` 
+                message: `Nominal bayar melebihi sisa utang (Rp ${kasbonTarget.sisa_pinjaman}).` 
             });
         }
 
-        // 4. Kalkulasi sisa utang baru dan penentuan status otomatis
+        // 4. Kalkulasi sisa utang & penentuan status
         const sisaBaru = kasbonTarget.sisa_pinjaman - nominal_bayar;
         const statusBaru = sisaBaru === 0 ? 'Lunas' : kasbonTarget.status;
 
-        // 5. Eksekusi pembaruan (Update) ke tabel kasbon
+        // 5. UPDATE ke tabel kasbon (Sisa Pinjaman & Status)
         const { data: updatedKasbon, error: errUpdate } = await supabase
             .from('kasbon')
             .update({ 
@@ -199,18 +198,35 @@ const bayarCicilanManual = async (req, res) => {
 
         if (errUpdate) throw errUpdate;
 
-        // (Opsional) 6. Simpan rekam jejak pembayaran ke tabel riwayat (Jika Anda punya tabelnya)
-        // await supabase.from('riwayat_pembayaran_kasbon').insert([{ ... }]);
+        // ================================================================
+        // 6. INSERT ke tabel riwayat_pembayaran_kasbon
+        // Di sinilah parameter tanggal dan metode digunakan!
+        // ================================================================
+        const { error: errRiwayat } = await supabase
+            .from('riwayat_pembayaran_kasbon')
+            .insert([{
+                kasbon_id: id,
+                tanggal_pembayaran: tanggal_pembayaran,
+                nominal_bayar: nominal_bayar,
+                metode_pembayaran: metode_pembayaran || 'Tunai', // Fallback default
+                keterangan: keterangan || 'Pembayaran cicilan manual via HRD'
+            }]);
+
+        if (errRiwayat) {
+            console.error('Gagal mencatat riwayat:', errRiwayat.message);
+            // Anda bisa memilih untuk melempar error atau membiarkan transaksi utama sukses
+            // Idealnya gunakan RPC (Stored Procedure) di Supabase agar Update & Insert berjalan serentak (Atomic Transaction).
+        }
 
         return res.status(200).json({ 
             success: true, 
-            message: `Pembayaran manual berhasil. Sisa pinjaman terkini: Rp ${sisaBaru}`, 
+            message: `Pembayaran berhasil. Sisa pinjaman: Rp ${sisaBaru}`, 
             data: updatedKasbon 
         });
 
     } catch (error) {
         console.error('Error bayarCicilanManual:', error.message);
-        return res.status(500).json({ success: false, message: 'Terjadi kesalahan sistem saat memproses pembayaran manual.' });
+        return res.status(500).json({ success: false, message: 'Kesalahan sistem saat memproses pembayaran.' });
     }
 };
 

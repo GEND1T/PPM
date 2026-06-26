@@ -230,10 +230,40 @@ const bayarCicilanManual = async (req, res) => {
     }
 };
 
+// =========================================================================
+// 6. READ: Ambil Riwayat Pembayaran Kasbon
+// =========================================================================
+const getRiwayatKasbon = async (req, res) => {
+    try {
+        // Query untuk mengambil riwayat beserta relasi nama pegawainya
+        // Supabase akan melakukan join ke tabel kasbon, lalu dari kasbon join ke pegawai
+        const { data, error } = await supabase
+            .from('riwayat_pembayaran_kasbon')
+            .select(`
+                *,
+                kasbon (
+                    pegawai (
+                        nama
+                    )
+                )
+            `)
+            .order('tanggal_pembayaran', { ascending: false }) // Urutkan dari yang terbaru
+            .order('created_at', { ascending: false }); 
+
+        if (error) throw error;
+
+        return res.status(200).json({ success: true, data });
+    } catch (error) {
+        console.error('Error getRiwayatKasbon:', error.message);
+        return res.status(500).json({ success: false, message: 'Gagal mengambil data riwayat pembayaran.' });
+    }
+};
+
 module.exports = {
     createKasbon,
     getKasbon,
     updateStatusKasbon,
     deleteKasbon,
-    bayarCicilanManual
+    bayarCicilanManual,
+    getRiwayatKasbon
 };

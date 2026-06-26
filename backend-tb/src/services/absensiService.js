@@ -126,7 +126,8 @@ async function prosesLogMesin(log) {
     // 1. CEK SURAT PERINTAH LEMBUR
     const { data: spl } = await supabase
         .from('otorisasi_lembur')
-        .select('menit_lembur_diizinkan')
+        // SUNTIKKAN DUA KOLOM BARU DI SINI:
+        .select('menit_lembur_diizinkan, is_custom_upah, nominal_upah_custom') 
         .eq('pegawai_id', pegawai.id)
         .eq('tanggal', tanggal)
         .maybeSingle();
@@ -185,14 +186,27 @@ async function prosesLogMesin(log) {
             }
         }
     }
-    // SKENARIO B: LEMBUR / PULANG NORMAL
+    /// SKENARIO B: LEMBUR / PULANG NORMAL
     else if (menitScan > targetPulang) {
         menitLemburMesin = menitScan - targetPulang;
 
         if (spl) {
             menitLemburDiakui = Math.min(menitLemburMesin, spl.menit_lembur_diizinkan);
             const jamLembur = Math.floor(menitLemburDiakui / 60); 
-            upahLembur = jamLembur * pegawai.jabatan.upah_lembur_per_jam;
+            
+            // =============================================================
+            // FITUR BARU: PENGECEKAN UPAH LEMBUR CUSTOM
+            // =============================================================
+            let tarifLemburPerJam = pegawai.jabatan.upah_lembur_per_jam; // Default dari Jabatan
+
+            // Jika admin mengaktifkan custom upah di SPL, timpa tarif defaultnya
+            if (spl.is_custom_upah && spl.nominal_upah_custom > 0) {
+                tarifLemburPerJam = spl.nominal_upah_custom;
+            }
+            
+            // Hitung upah akhir menggunakan tarif yang terpilih
+            upahLembur = jamLembur * tarifLemburPerJam;
+            // =============================================================
         }
     }
     

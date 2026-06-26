@@ -5,7 +5,16 @@ const supabase = require('../../config/supabaseClient');
 // ==========================================
 const createSPL = async (req, res) => {
     try {
-        const { pegawai_id, tanggal, menit_lembur_diizinkan, alasan_lembur, disetujui_oleh } = req.body;
+        // 1. Tambahkan is_custom_upah dan nominal_upah_custom ke destructuring req.body
+        const { 
+            pegawai_id, 
+            tanggal, 
+            menit_lembur_diizinkan, 
+            alasan_lembur, 
+            disetujui_oleh,
+            is_custom_upah,         // <-- BARU
+            nominal_upah_custom     // <-- BARU
+        } = req.body;
 
         // Validasi input dasar
         if (!pegawai_id || !tanggal || typeof menit_lembur_diizinkan === 'undefined') {
@@ -15,8 +24,7 @@ const createSPL = async (req, res) => {
             });
         }
 
-        // Gunakan UPSERT: Jika belum ada = Insert. Jika sudah ada di tanggal yang sama = Update.
-        // (Syarat: constraint unique_lembur_harian pada DB harus ada, yang mana sudah kita buat sebelumnya)
+        // 2. Masukkan parameter baru ke dalam payload upsert
         const { data, error } = await supabase
             .from('otorisasi_lembur')
             .upsert({
@@ -24,14 +32,17 @@ const createSPL = async (req, res) => {
                 tanggal: tanggal,
                 menit_lembur_diizinkan: menit_lembur_diizinkan,
                 alasan_lembur: alasan_lembur || 'Lembur reguler',
-                disetujui_oleh: disetujui_oleh || 'Sistem HRD'
+                disetujui_oleh: disetujui_oleh || 'Sistem HRD',
+                
+                // Tambahkan field custom upah (Gunakan fallback ke false/0 jika kosong)
+                is_custom_upah: is_custom_upah || false,
+                nominal_upah_custom: is_custom_upah ? (nominal_upah_custom || 0) : 0
             }, { onConflict: 'pegawai_id, tanggal' }) 
             .select()
             .single();
 
         if (error) throw error;
 
-        // Berikan respons sukses ke PWA
         return res.status(200).json({
             success: true,
             message: 'Surat Perintah Lembur (SPL) berhasil disimpan.',

@@ -141,9 +141,19 @@ const getSPL = async (req, res) => {
 const getAllSPL = async (req, res) => {
     try {
         const today = new Date().toISOString().split('T')[0]; // Format YYYY-MM-DD
+        
         const { data, error } = await supabase
             .from('otorisasi_lembur')
-            .select('*')
+            // Melakukan Nested Join: Otorisasi Lembur -> Pegawai -> Jabatan
+            .select(`
+                *,
+                pegawai (
+                    nama,
+                    jabatan (
+                        upah_lembur_per_jam
+                    )
+                )
+            `)
             .gte('tanggal', today) // Ambil SPL hari ini dan yang akan datang
             .order('tanggal', { ascending: true }); // Urutkan dari yang terdekat
 

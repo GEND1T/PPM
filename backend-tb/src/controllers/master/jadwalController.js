@@ -18,7 +18,8 @@ const getAllJadwal = async (req, res) => {
                 shift_id,
                 shifts (kode_shift, jam_masuk, jam_pulang)
             `)
-            .order('tanggal', { ascending: true });
+            .order('tanggal', { ascending: true })
+            .limit(10000);
 
         if (pegawai_id) query = query.eq('pegawai_id', pegawai_id);
 

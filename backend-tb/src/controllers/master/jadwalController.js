@@ -100,18 +100,20 @@ const generateJadwalMassal = async (req, res) => {
 
         if (errPegawai) throw errPegawai;
 
-        const start = new Date(tanggal_mulai);
-        const end = new Date(tanggal_selesai);
-        const formatTanggalMulai = start.toLocaleDateString('en-CA');
-        const formatTanggalSelesai = end.toLocaleDateString('en-CA');
+        // Parse tanggal secara konsisten menggunakan UTC untuk mengabaikan offset zona waktu server
+        const [startY, startM, startD] = tanggal_mulai.split('-').map(Number);
+        const [endY, endM, endD] = tanggal_selesai.split('-').map(Number);
+
+        const formatTanggalMulai = `${startY}-${String(startM).padStart(2, '0')}-${String(startD).padStart(2, '0')}`;
+        const formatTanggalSelesai = `${endY}-${String(endM).padStart(2, '0')}-${String(endD).padStart(2, '0')}`;
 
         // 2. Tentukan target shift_id
         let isOverride = false;
         let targetShiftId = null;
 
-        if (shift_id !== undefined && shift_id !== "") {
+        if (shift_id !== undefined && shift_id !== null && shift_id !== "") {
             isOverride = true;
-            if (shift_id !== "off") {
+            if (shift_id !== "off" && shift_id !== "OFF") {
                 targetShiftId = parseInt(shift_id);
             }
         }
@@ -125,14 +127,21 @@ const generateJadwalMassal = async (req, res) => {
 
             if (finalShiftId) {
                 // Skenario 1: Pegawai memiliki shift (Masuk). Rakit array untuk UPSERT.
-                let current = new Date(start);
+                const current = new Date(Date.UTC(startY, startM - 1, startD));
+                const end = new Date(Date.UTC(endY, endM - 1, endD));
+
                 while (current <= end) {
+                    const year = current.getUTCFullYear();
+                    const month = String(current.getUTCMonth() + 1).padStart(2, '0');
+                    const day = String(current.getUTCDate()).padStart(2, '0');
+                    const tglStr = `${year}-${month}-${day}`;
+
                     listJadwalUpsert.push({
                         pegawai_id: pegawai.id,
-                        tanggal: current.toLocaleDateString('en-CA'),
+                        tanggal: tglStr,
                         shift_id: finalShiftId
                     });
-                    current.setDate(current.getDate() + 1);
+                    current.setUTCDate(current.getUTCDate() + 1);
                 }
             } else {
                 // Skenario 2: Pegawai "off" atau tidak punya default. 
@@ -147,27 +156,29 @@ const generateJadwalMassal = async (req, res) => {
             }
         }
 
-        // 4. Eksekusi Tembakan ke Database secara Paralel
-        const operasiDatabase = [];
-
+        // 4. Eksekusi Upsert dalam Batch / Chunk (max 300 rows per request)
+        // Mencegah terpotong oleh limit PostgREST Supabase (max_rows default = 1000)
+        const BATCH_SIZE = 300;
         if (listJadwalUpsert.length > 0) {
-            operasiDatabase.push(
-                supabase.from('jadwal_karyawan')
-                    .upsert(listJadwalUpsert, { onConflict: 'pegawai_id,tanggal' })
-            );
+            for (let i = 0; i < listJadwalUpsert.length; i += BATCH_SIZE) {
+                const batch = listJadwalUpsert.slice(i, i + BATCH_SIZE);
+                const { error: upsertErr } = await supabase
+                    .from('jadwal_karyawan')
+                    .upsert(batch, { onConflict: 'pegawai_id,tanggal' });
+
+                if (upsertErr) {
+                    console.error(`Error batch upsert index ${i} s/d ${i + batch.length}:`, upsertErr);
+                    throw upsertErr;
+                }
+            }
         }
 
         if (operasiDeletePromises.length > 0) {
-            // Masukkan semua eksekusi DELETE ke dalam antrean promise
-            operasiDatabase.push(...operasiDeletePromises);
-        }
-
-        if (operasiDatabase.length > 0) {
-            const results = await Promise.all(operasiDatabase);
-            const errors = results.filter(res => res.error);
-            if (errors.length > 0) {
-                console.error('Mass Database Error:', errors);
-                throw new Error('Gagal mengeksekusi sebagian operasi database massal.');
+            const deleteResults = await Promise.all(operasiDeletePromises);
+            const deleteErrors = deleteResults.filter(res => res.error);
+            if (deleteErrors.length > 0) {
+                console.error('Mass Delete Error:', deleteErrors);
+                throw new Error('Gagal menghapus sebagian jadwal libur.');
             }
         }
 
@@ -182,7 +193,6 @@ const generateJadwalMassal = async (req, res) => {
         });
 
         // 6. Trigger Webhook ke n8n untuk Broadcast WAHA (Asinkron)
-        // Disarankan n8n memproses list ini menggunakan node "Loop" (Split In Batches) agar pesan tidak terkirim bersamaan dan menyebabkan limit WA
         fetch('https://n8n-url-kamu.com/webhook/notif-jadwal-massal', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -196,7 +206,7 @@ const generateJadwalMassal = async (req, res) => {
 
         return res.status(200).json({ 
             success: true, 
-            message: `✅ Berhasil memproses jadwal massal untuk ${listPegawai.length} pegawai.` 
+            message: `✅ Berhasil memproses jadwal massal untuk ${listPegawai.length} pegawai (${listJadwalUpsert.length} slot jadwal).` 
         });
 
     } catch (error) {
@@ -204,6 +214,7 @@ const generateJadwalMassal = async (req, res) => {
         return res.status(500).json({ success: false, message: 'Gagal men-generate jadwal massal.' });
     }
 };
+
 // =========================================================================
 // 4. UPDATE: Mengubah Shift Karyawan di Hari Tertentu
 // =========================================================================

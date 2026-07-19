@@ -17,6 +17,7 @@ const splRoutes = require('./transaksi/splRoutes');
 const targetRoutes = require('./transaksi/targetRoutes');
 const kasbonRoutes = require('./transaksi/kasbonRoutes');
 const bonusCustomRoutes = require('./transaksi/bonuscustomRoutes');
+const polaRotasiRoutes = require('./master/polaRotasiRoutes');
 
 
 // Daftarkan rute dan pasang gembok JWT secara global untuk rute ini
@@ -32,5 +33,6 @@ router.use('/lembur', verifikasiToken, splRoutes);
 router.use('/target', verifikasiToken, targetRoutes);
 router.use('/kasbon', verifikasiToken, kasbonRoutes);
 router.use('/bonus-custom', verifikasiToken, bonusCustomRoutes);
+router.use('/pola-rotasi', verifikasiToken, polaRotasiRoutes);
 
 module.exports = router;

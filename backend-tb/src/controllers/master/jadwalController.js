@@ -109,13 +109,29 @@ const generateJadwalMassal = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Parameter pembuatan massal tidak lengkap/valid.' });
         }
 
-        // 1. Ambil data pegawai beserta default_shift_id-nya
+        // 1. Ambil data pegawai beserta default_shift_id, pola_rotasi_id, & tanggal_mulai_pola
         const { data: listPegawai, error: errPegawai } = await supabase
             .from('pegawai')
-            .select('id, default_shift_id')
+            .select('id, default_shift_id, pola_rotasi_id, tanggal_mulai_pola')
             .in('id', list_pegawai_ids);
 
         if (errPegawai) throw errPegawai;
+
+        // Tarik seluruh Master Pola Rotasi beserta Detailnya ke memori
+        const { data: listPola } = await supabase
+            .from('pola_rotasi_shift')
+            .select(`
+                id, jumlah_hari_siklus,
+                detail_pola_rotasi (urutan_hari, shift_id)
+            `);
+
+        const polaMap = {};
+        (listPola || []).forEach(pola => {
+            polaMap[pola.id] = {
+                jumlah_hari: pola.jumlah_hari_siklus,
+                details: pola.detail_pola_rotasi || []
+            };
+        });
 
         // Parse tanggal secara konsisten menggunakan UTC untuk mengabaikan offset zona waktu server
         const [startY, startM, startD] = tanggal_mulai.split('-').map(Number);
@@ -124,7 +140,7 @@ const generateJadwalMassal = async (req, res) => {
         const formatTanggalMulai = `${startY}-${String(startM).padStart(2, '0')}-${String(startD).padStart(2, '0')}`;
         const formatTanggalSelesai = `${endY}-${String(endM).padStart(2, '0')}-${String(endD).padStart(2, '0')}`;
 
-        // 2. Tentukan target shift_id
+        // 2. Tentukan target shift_id (Jika dipaksa override manual oleh admin)
         let isOverride = false;
         let targetShiftId = null;
 
@@ -140,36 +156,103 @@ const generateJadwalMassal = async (req, res) => {
         const operasiDeletePromises = [];
 
         for (const pegawai of listPegawai) {
-            const finalShiftId = isOverride ? targetShiftId : pegawai.default_shift_id;
+            if (isOverride) {
+                if (targetShiftId) {
+                    const current = new Date(Date.UTC(startY, startM - 1, startD));
+                    const end = new Date(Date.UTC(endY, endM - 1, endD));
 
-            if (finalShiftId) {
-                // Skenario 1: Pegawai memiliki shift (Masuk). Rakit array untuk UPSERT.
-                const current = new Date(Date.UTC(startY, startM - 1, startD));
-                const end = new Date(Date.UTC(endY, endM - 1, endD));
+                    while (current <= end) {
+                        const year = current.getUTCFullYear();
+                        const month = String(current.getUTCMonth() + 1).padStart(2, '0');
+                        const day = String(current.getUTCDate()).padStart(2, '0');
+                        const tglStr = `${year}-${month}-${day}`;
 
-                while (current <= end) {
-                    const year = current.getUTCFullYear();
-                    const month = String(current.getUTCMonth() + 1).padStart(2, '0');
-                    const day = String(current.getUTCDate()).padStart(2, '0');
-                    const tglStr = `${year}-${month}-${day}`;
-
-                    listJadwalUpsert.push({
-                        pegawai_id: pegawai.id,
-                        tanggal: tglStr,
-                        shift_id: finalShiftId
-                    });
-                    current.setUTCDate(current.getUTCDate() + 1);
+                        listJadwalUpsert.push({
+                            pegawai_id: pegawai.id,
+                            tanggal: tglStr,
+                            shift_id: targetShiftId
+                        });
+                        current.setUTCDate(current.getUTCDate() + 1);
+                    }
+                } else {
+                    // Override Libur / OFF
+                    operasiDeletePromises.push(
+                        supabase.from('jadwal_karyawan')
+                            .delete()
+                            .eq('pegawai_id', pegawai.id)
+                            .gte('tanggal', formatTanggalMulai)
+                            .lte('tanggal', formatTanggalSelesai)
+                    );
                 }
             } else {
-                // Skenario 2: Pegawai "off" atau tidak punya default. 
-                // Hapus jadwalnya pada rentang tanggal tersebut sekaligus.
-                operasiDeletePromises.push(
-                    supabase.from('jadwal_karyawan')
-                        .delete()
-                        .eq('pegawai_id', pegawai.id)
-                        .gte('tanggal', formatTanggalMulai)
-                        .lte('tanggal', formatTanggalSelesai)
-                );
+                // Otomatis (Tanpa Override Manual): Prioritaskan Pola Rotasi Rolling Shift
+                if (pegawai.pola_rotasi_id && pegawai.tanggal_mulai_pola && polaMap[pegawai.pola_rotasi_id]) {
+                    const polaInfo = polaMap[pegawai.pola_rotasi_id];
+                    const [ancY, ancM, ancD] = pegawai.tanggal_mulai_pola.split('-').map(Number);
+                    const startDateAnchor = new Date(Date.UTC(ancY, ancM - 1, ancD));
+
+                    const current = new Date(Date.UTC(startY, startM - 1, startD));
+                    const end = new Date(Date.UTC(endY, endM - 1, endD));
+
+                    while (current <= end) {
+                        const year = current.getUTCFullYear();
+                        const month = String(current.getUTCMonth() + 1).padStart(2, '0');
+                        const day = String(current.getUTCDate()).padStart(2, '0');
+                        const tglStr = `${year}-${month}-${day}`;
+
+                        const diffTime = current.getTime() - startDateAnchor.getTime();
+                        const diffDays = Math.floor(diffTime / (1000 * 3600 * 24));
+
+                        if (diffDays >= 0) {
+                            const urutanHari = (diffDays % polaInfo.jumlah_hari) + 1;
+                            const detailTarget = polaInfo.details.find(d => d.urutan_hari === urutanHari);
+
+                            if (detailTarget && detailTarget.shift_id) {
+                                listJadwalUpsert.push({
+                                    pegawai_id: pegawai.id,
+                                    tanggal: tglStr,
+                                    shift_id: detailTarget.shift_id
+                                });
+                            } else {
+                                // Hari ini OFF menurut pola rotasi, hapus jadwal lama jika ada
+                                operasiDeletePromises.push(
+                                    supabase.from('jadwal_karyawan')
+                                        .delete()
+                                        .eq('pegawai_id', pegawai.id)
+                                        .eq('tanggal', tglStr)
+                                );
+                            }
+                        }
+                        current.setUTCDate(current.getUTCDate() + 1);
+                    }
+                } else if (pegawai.default_shift_id) {
+                    // Fallback ke Default Shift Biasa
+                    const current = new Date(Date.UTC(startY, startM - 1, startD));
+                    const end = new Date(Date.UTC(endY, endM - 1, endD));
+
+                    while (current <= end) {
+                        const year = current.getUTCFullYear();
+                        const month = String(current.getUTCMonth() + 1).padStart(2, '0');
+                        const day = String(current.getUTCDate()).padStart(2, '0');
+                        const tglStr = `${year}-${month}-${day}`;
+
+                        listJadwalUpsert.push({
+                            pegawai_id: pegawai.id,
+                            tanggal: tglStr,
+                            shift_id: pegawai.default_shift_id
+                        });
+                        current.setUTCDate(current.getUTCDate() + 1);
+                    }
+                } else {
+                    // Pegawai tidak memiliki pola rotasi maupun default_shift_id
+                    operasiDeletePromises.push(
+                        supabase.from('jadwal_karyawan')
+                            .delete()
+                            .eq('pegawai_id', pegawai.id)
+                            .gte('tanggal', formatTanggalMulai)
+                            .lte('tanggal', formatTanggalSelesai)
+                    );
+                }
             }
         }
 
@@ -475,59 +558,132 @@ const prosesGenerateJadwalMingguanOtomatis = async () => {
     
     try {
         // A. Hitung rentang tanggal untuk MINGGU DEPAN (Senin s/d Minggu)
-        // Jika sekarang Sabtu (hari eksekusi Cron), maka Senin depan adalah +2 hari, Minggu depan adalah +8 hari
-        const hariIni = new Date();
-        
-        const seninDepan = new Date(hariIni);
-        seninDepan.setDate(hariIni.getDate() + 2);
-        
-        const mingguDepan = new Date(hariIni);
-        mingguDepan.setDate(hariIni.getDate() + 8);
+        const d = new Date();
+        const nowWIB = new Date(d.getTime() + (7 * 60 * 60 * 1000));
+        const dayOfWeek = nowWIB.getUTCDay(); // 0 = Minggu, 1 = Senin, ..., 6 = Sabtu
 
-        const startDateStr = seninDepan.toLocaleDateString('en-CA'); // YYYY-MM-DD
-        const endDateStr = mingguDepan.toLocaleDateString('en-CA');
+        // Hitung jarak hari ke Senin minggu depan
+        const daysUntilNextMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek);
+        
+        const seninDepan = new Date(nowWIB);
+        seninDepan.setUTCDate(nowWIB.getUTCDate() + daysUntilNextMonday);
+        
+        const mingguDepan = new Date(seninDepan);
+        mingguDepan.setUTCDate(seninDepan.getUTCDate() + 6);
 
-        // B. Ambil seluruh pegawai aktif beserta Shift Default mereka
+        const startY = seninDepan.getUTCFullYear();
+        const startM = seninDepan.getUTCMonth() + 1;
+        const startD = seninDepan.getUTCDate();
+
+        const endY = mingguDepan.getUTCFullYear();
+        const endM = mingguDepan.getUTCMonth() + 1;
+        const endD = mingguDepan.getUTCDate();
+
+        const startDateStr = `${startY}-${String(startM).padStart(2, '0')}-${String(startD).padStart(2, '0')}`;
+        const endDateStr = `${endY}-${String(endM).padStart(2, '0')}-${String(endD).padStart(2, '0')}`;
+
+        // B. Ambil seluruh pegawai aktif beserta Shift Default & Pola Rotasi mereka
         const { data: listPegawai, error: errPegawai } = await supabase
             .from('pegawai')
-            .select('id, nama, default_shift_id');
+            .select('id, nama, default_shift_id, pola_rotasi_id, tanggal_mulai_pola');
 
         if (errPegawai) throw errPegawai;
         if (!listPegawai || listPegawai.length === 0) return;
 
+        // C. Tarik seluruh Master Pola Rotasi beserta Detailnya ke memori
+        const { data: listPola } = await supabase
+            .from('pola_rotasi_shift')
+            .select(`
+                id, jumlah_hari_siklus,
+                detail_pola_rotasi (urutan_hari, shift_id)
+            `);
+
+        const polaMap = {};
+        (listPola || []).forEach(pola => {
+            polaMap[pola.id] = {
+                jumlah_hari: pola.jumlah_hari_siklus,
+                details: pola.detail_pola_rotasi || []
+            };
+        });
+
         const listJadwalOtomatis = [];
 
-        // C. Looping menyusun jadwal 7 hari ke depan untuk semua orang
+        // D. Looping menyusun jadwal 7 hari ke depan untuk semua pegawai
         for (const pegawai of listPegawai) {
-            // Jika pegawai tidak punya shift default, kita lewati (dianggap libur/tidak terjadwal)
-            if (!pegawai.default_shift_id) continue; 
+            // Skenario 1: Pegawai Menggunakan Pola Rotasi Rolling Shift Dinamis
+            if (pegawai.pola_rotasi_id && pegawai.tanggal_mulai_pola && polaMap[pegawai.pola_rotasi_id]) {
+                const polaInfo = polaMap[pegawai.pola_rotasi_id];
+                const [ancY, ancM, ancD] = pegawai.tanggal_mulai_pola.split('-').map(Number);
+                const startDateAnchor = new Date(Date.UTC(ancY, ancM - 1, ancD));
 
-            let current = new Date(seninDepan);
-            const end = new Date(mingguDepan);
+                const current = new Date(Date.UTC(startY, startM - 1, startD));
+                const end = new Date(Date.UTC(endY, endM - 1, endD));
 
-            while (current <= end) {
-                listJadwalOtomatis.push({
-                    pegawai_id: pegawai.id,
-                    tanggal: current.toLocaleDateString('en-CA'),
-                    shift_id: pegawai.default_shift_id
-                });
-                current.setDate(current.getDate() + 1);
+                while (current <= end) {
+                    const year = current.getUTCFullYear();
+                    const month = String(current.getUTCMonth() + 1).padStart(2, '0');
+                    const day = String(current.getUTCDate()).padStart(2, '0');
+                    const tglStr = `${year}-${month}-${day}`;
+
+                    const diffTime = current.getTime() - startDateAnchor.getTime();
+                    const diffDays = Math.floor(diffTime / (1000 * 3600 * 24));
+
+                    if (diffDays >= 0) {
+                        const urutanHari = (diffDays % polaInfo.jumlah_hari) + 1;
+                        const detailTarget = polaInfo.details.find(d => d.urutan_hari === urutanHari);
+
+                        if (detailTarget && detailTarget.shift_id) {
+                            listJadwalOtomatis.push({
+                                pegawai_id: pegawai.id,
+                                tanggal: tglStr,
+                                shift_id: detailTarget.shift_id
+                            });
+                        }
+                    }
+                    current.setUTCDate(current.getUTCDate() + 1);
+                }
+            }
+            // Skenario 2: Fallback ke Default Shift Biasa
+            else if (pegawai.default_shift_id) {
+                const current = new Date(Date.UTC(startY, startM - 1, startD));
+                const end = new Date(Date.UTC(endY, endM - 1, endD));
+
+                while (current <= end) {
+                    const year = current.getUTCFullYear();
+                    const month = String(current.getUTCMonth() + 1).padStart(2, '0');
+                    const day = String(current.getUTCDate()).padStart(2, '0');
+                    const tglStr = `${year}-${month}-${day}`;
+
+                    listJadwalOtomatis.push({
+                        pegawai_id: pegawai.id,
+                        tanggal: tglStr,
+                        shift_id: pegawai.default_shift_id
+                    });
+                    current.setUTCDate(current.getUTCDate() + 1);
+                }
             }
         }
 
-        // D. Tembakkan Bulk Upsert ke Supabase
+        // E. Tembakkan Bulk Upsert dalam Batch 300 rows (Mencegah PostgREST Limit Error)
+        const BATCH_SIZE = 300;
         if (listJadwalOtomatis.length > 0) {
-            const { error: errUpsert } = await supabase
-                .from('jadwal_karyawan')
-                .upsert(listJadwalOtomatis, { onConflict: 'pegawai_id,tanggal' });
+            for (let i = 0; i < listJadwalOtomatis.length; i += BATCH_SIZE) {
+                const batch = listJadwalOtomatis.slice(i, i + BATCH_SIZE);
+                const { error: upsertErr } = await supabase
+                    .from('jadwal_karyawan')
+                    .upsert(batch, { onConflict: 'pegawai_id,tanggal' });
 
-            if (errUpsert) throw errUpsert;
+                if (upsertErr) {
+                    console.error(`[CRON] Error batch upsert ${i} s/d ${i + batch.length}:`, upsertErr);
+                    throw upsertErr;
+                }
+            }
             console.log(`🎉 [CRON] Sukses men-generate ${listJadwalOtomatis.length} slot jadwal baru untuk periode ${startDateStr} s/d ${endDateStr}`);
         }
 
     } catch (error) {
         console.error('❌ [CRON] Gagal men-generate jadwal mingguan:', error.message);
-        throw error; // Lempar ke master agar tercatat di log server
+        throw error;
     }
 };
 

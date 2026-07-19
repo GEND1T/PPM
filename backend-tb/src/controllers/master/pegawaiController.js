@@ -44,7 +44,6 @@ const createPegawai = async (req, res) => {
 // 2. READ: Ambil Semua Pegawai (Dengan Nested Join)
 const getAllPegawai = async (req, res) => {
     try {
-        // PERBAIKAN: Melakukan query bertingkat (Pegawai -> Jabatan -> Departemen)
         const { data, error } = await supabase
             .from('pegawai')
             .select(`
@@ -53,7 +52,8 @@ const getAllPegawai = async (req, res) => {
                     nama_jabatan,
                     departemen (nama_departemen)
                 ),
-                shifts (kode_shift)
+                shifts (kode_shift),
+                pola_rotasi_shift (id, nama_pola, jumlah_hari_siklus)
             `)
             .order('nama', { ascending: true });
 
@@ -78,7 +78,8 @@ const getPegawaiById = async (req, res) => {
                     nama_jabatan,
                     departemen (nama_departemen)
                 ),
-                shifts (kode_shift)
+                shifts (kode_shift),
+                pola_rotasi_shift (id, nama_pola, jumlah_hari_siklus)
             `)
             .eq('id', id)
             .single();

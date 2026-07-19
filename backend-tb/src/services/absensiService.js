@@ -82,7 +82,7 @@ async function prosesLogMesin(log) {
 
         if (menitScan <= batasToleransi) {
             statusMasuk = menitScan < targetMasuk ? 'intime' : 'ontime';
-            bonusDisiplin = pegawai.jabatan.bonus_disiplin_harian;
+            bonusDisiplin = pegawai.jabatan?.bonus_disiplin_harian || 0;
         } else {
             // PEGAWAI TERLAMBAT
             if (shift.is_potong_gaji_terlambat) {
@@ -105,7 +105,7 @@ async function prosesLogMesin(log) {
             shift_id: shift.id, 
             waktu_awal: jam,
             status: statusMasuk,
-            upah_harian: pegawai.jabatan.upah_per_kehadiran, 
+            upah_harian: pegawai.jabatan?.upah_per_kehadiran || 0, 
             bonus_kedisiplinan: bonusDisiplin,
             denda: dendaTerlambat 
         });
@@ -160,7 +160,7 @@ async function prosesLogMesin(log) {
     
     if (menitAwal <= batasToleransi) {
         statusPagi = menitAwal < targetMasuk ? 'intime' : 'ontime';
-        hakBonusPagi = pegawai.jabatan.bonus_disiplin_harian || 0;
+        hakBonusPagi = pegawai.jabatan?.bonus_disiplin_harian || 0;
     }
 
     let statusAkhir = statusPagi; 
@@ -197,7 +197,7 @@ async function prosesLogMesin(log) {
             // =============================================================
             // FITUR BARU: PENGECEKAN UPAH LEMBUR CUSTOM
             // =============================================================
-            let tarifLemburPerJam = pegawai.jabatan.upah_lembur_per_jam; // Default dari Jabatan
+            let tarifLemburPerJam = pegawai.jabatan?.upah_lembur_per_jam || 0; // Default dari Jabatan
 
             // Jika admin mengaktifkan custom upah di SPL, timpa tarif defaultnya
             if (spl.is_custom_upah && spl.nominal_upah_custom > 0) {

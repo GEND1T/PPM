@@ -156,5 +156,123 @@ const createAbsenManual = async (req, res) => {
     }
 };
 
+// 4. POST: Simulasi Endpoint Kirim Log Mesin Absensi (Menguji integrasi mesin ADMS / Fingerprint)
+const simulasiLogMesin = async (req, res) => {
+    try {
+        let logsToProcess = [];
 
-module.exports = { getAllAbsen, updateAbsen, createAbsenManual };
+        // 1. JIKA BODY ADALAH TEKS MENTAH (Format ADMS Mesin)
+        if (typeof req.body === 'string' && req.body.trim()) {
+            const { parseAdmsLog } = require('../../utils/admsParser');
+            logsToProcess = parseAdmsLog(req.body);
+        }
+        // 2. JIKA BODY ADALAH OBJECT / JSON
+        else if (typeof req.body === 'object' && req.body !== null) {
+            const { mode, tanggal, logs, pin_mesin, jam, state } = req.body;
+
+            // Mode 2A: Mode Auto-Generate Simulasi per Tanggal
+            if (mode === 'auto') {
+                const tglSimulasi = tanggal || new Date().toLocaleDateString('en-CA');
+                
+                const { data: listJadwal, error: errJadwal } = await supabase
+                    .from('jadwal_karyawan')
+                    .select('pegawai_id, pegawai (pin_mesin), shifts (jam_masuk, jam_pulang)')
+                    .eq('tanggal', tglSimulasi);
+
+                if (errJadwal) throw errJadwal;
+
+                if (!listJadwal || listJadwal.length === 0) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Tidak ada jadwal shift karyawan pada tanggal ${tglSimulasi}.`
+                    });
+                }
+
+                for (const item of listJadwal) {
+                    const pin = item.pegawai?.pin_mesin;
+                    const shift = item.shifts;
+                    if (pin && shift) {
+                        // Log Scan Masuk
+                        logsToProcess.push({
+                            pinMesin: pin,
+                            tanggal: tglSimulasi,
+                            jam: shift.jam_masuk,
+                            state: 0
+                        });
+                        // Log Scan Pulang
+                        logsToProcess.push({
+                            pinMesin: pin,
+                            tanggal: tglSimulasi,
+                            jam: shift.jam_pulang,
+                            state: 1
+                        });
+                    }
+                }
+            }
+            // Mode 2B: Multiple Logs JSON Array
+            else if (Array.isArray(logs) && logs.length > 0) {
+                logsToProcess = logs.map(l => ({
+                    pinMesin: String(l.pin_mesin || l.pinMesin),
+                    tanggal: l.tanggal,
+                    jam: l.jam,
+                    state: l.state !== undefined ? l.state : 0
+                }));
+            }
+            // Mode 2C: Single Log JSON Object
+            else if (pin_mesin || req.body.pinMesin) {
+                const pin = pin_mesin || req.body.pinMesin;
+                const tgl = tanggal || new Date().toLocaleDateString('en-CA');
+                logsToProcess.push({
+                    pinMesin: String(pin),
+                    tanggal: tgl,
+                    jam: jam || '08:00:00',
+                    state: state !== undefined ? state : 0
+                });
+            }
+        }
+
+        if (logsToProcess.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Format request simulasi tidak valid atau data log kosong.',
+                contoh_format: {
+                    single_json: { pin_mesin: "101", tanggal: "2026-06-05", jam: "07:05:00", state: 0 },
+                    batch_json: { logs: [{ pin_mesin: "101", tanggal: "2026-06-05", jam: "07:05:00", state: 0 }] },
+                    auto_generate: { mode: "auto", tanggal: "2026-06-05" },
+                    raw_adms_text: "101 2026-06-05 07:05:00 0 1"
+                }
+            });
+        }
+
+        // 3. EKSEKUSI PEMROSESAN LOG MELALUI SERVICE MESIN UTAMA
+        let diproses = 0;
+        const detailHasil = [];
+
+        for (const log of logsToProcess) {
+            await prosesLogMesin(log);
+            diproses++;
+            detailHasil.push({
+                pin_mesin: log.pinMesin,
+                waktu_scan: `${log.tanggal} ${log.jam}`,
+                punch_state: log.state === 0 ? 'Masuk' : log.state === 1 ? 'Pulang' : log.state
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: `Simulasi mesin absensi berhasil! ${diproses} log data telah diproses oleh payroll engine.`,
+            total_log: diproses,
+            detail: detailHasil
+        });
+
+    } catch (error) {
+        console.error('Error simulasiLogMesin:', error.message);
+        return res.status(500).json({
+            success: false,
+            message: 'Terjadi kesalahan sistem saat memproses simulasi mesin absensi.',
+            error: error.message
+        });
+    }
+};
+
+module.exports = { getAllAbsen, updateAbsen, createAbsenManual, simulasiLogMesin };

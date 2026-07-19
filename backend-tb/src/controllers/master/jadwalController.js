@@ -5,33 +5,49 @@ const supabase = require('../../config/supabaseClient');
 // Endpoint: GET /api/v1/jadwal?start_date=2026-05-21&end_date=2026-06-20
 const getAllJadwal = async (req, res) => {
     try {
-        // Ambil parameter tanggal mulai dan selesai dari query URL
         const { start_date, end_date, pegawai_id } = req.query;
 
-        let query = supabase
-            .from('jadwal_karyawan')
-            .select(`
-                id, 
-                tanggal, 
-                pegawai_id,
-                pegawai (nama, jabatan (nama_jabatan)),
-                shift_id,
-                shifts (kode_shift, jam_masuk, jam_pulang)
-            `)
-            .order('tanggal', { ascending: true })
-            .limit(10000);
+        let allData = [];
+        let page = 0;
+        const PAGE_SIZE = 1000;
+        let hasMore = true;
 
-        if (pegawai_id) query = query.eq('pegawai_id', pegawai_id);
+        while (hasMore) {
+            let query = supabase
+                .from('jadwal_karyawan')
+                .select(`
+                    id, 
+                    tanggal, 
+                    pegawai_id,
+                    pegawai (nama, jabatan (nama_jabatan)),
+                    shift_id,
+                    shifts (kode_shift, jam_masuk, jam_pulang)
+                `)
+                .order('tanggal', { ascending: true })
+                .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-        // Filter dinamis berdasarkan rentang tanggal
-        if (start_date && end_date) {
-            query = query.gte('tanggal', start_date).lte('tanggal', end_date);
+            if (pegawai_id) query = query.eq('pegawai_id', pegawai_id);
+
+            if (start_date && end_date) {
+                query = query.gte('tanggal', start_date).lte('tanggal', end_date);
+            }
+
+            const { data, error } = await query;
+            if (error) throw error;
+
+            if (data && data.length > 0) {
+                allData = allData.concat(data);
+                if (data.length < PAGE_SIZE) {
+                    hasMore = false;
+                } else {
+                    page++;
+                }
+            } else {
+                hasMore = false;
+            }
         }
 
-        const { data, error } = await query;
-        if (error) throw error;
-
-        return res.status(200).json({ success: true, data });
+        return res.status(200).json({ success: true, data: allData });
     } catch (error) {
         console.error('Error getAllJadwal:', error.message);
         return res.status(500).json({ success: false, message: 'Gagal mengambil data jadwal.' });

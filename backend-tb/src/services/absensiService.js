@@ -17,7 +17,7 @@ async function prosesLogMesin(log) {
     // 2. Cari Data Pegawai Dasar (Untuk Upah & Bonus)
     const { data: pegawai, error: errPegawai } = await supabase
         .from('pegawai')
-        .select('id, jabatan(upah_per_kehadiran, bonus_disiplin_harian, upah_lembur_per_jam)')
+        .select('id, jabatan(upah_per_kehadiran, bonus_disiplin_harian, upah_lembur_per_jam, upah_lembur_flat)')
         .eq('pin_mesin', pinMesin)
         .single();
 
@@ -126,8 +126,7 @@ async function prosesLogMesin(log) {
     // 1. CEK SURAT PERINTAH LEMBUR
     const { data: spl } = await supabase
         .from('otorisasi_lembur')
-        // SUNTIKKAN DUA KOLOM BARU DI SINI:
-        .select('menit_lembur_diizinkan, is_custom_upah, nominal_upah_custom') 
+        .select('menit_lembur_diizinkan, is_custom_upah, nominal_upah_custom, tipe_hitung_lembur') 
         .eq('pegawai_id', pegawai.id)
         .eq('tanggal', tanggal)
         .maybeSingle();
@@ -192,20 +191,34 @@ async function prosesLogMesin(log) {
 
         if (spl) {
             menitLemburDiakui = Math.min(menitLemburMesin, spl.menit_lembur_diizinkan);
-            const jamLembur = Math.floor(menitLemburDiakui / 60); 
             
             // =============================================================
-            // FITUR BARU: PENGECEKAN UPAH LEMBUR CUSTOM
+            // FITUR BARU: PENGECEKAN UPAH LEMBUR CUSTOM & TIPE PERHITUNGAN
             // =============================================================
-            let tarifLemburPerJam = pegawai.jabatan?.upah_lembur_per_jam || 0; // Default dari Jabatan
+            const tipeHitung = spl.tipe_hitung_lembur || 'per_jam';
+            let tarifLembur = 0;
 
             // Jika admin mengaktifkan custom upah di SPL, timpa tarif defaultnya
             if (spl.is_custom_upah && spl.nominal_upah_custom > 0) {
-                tarifLemburPerJam = spl.nominal_upah_custom;
+                tarifLembur = spl.nominal_upah_custom;
+            } else {
+                if (tipeHitung === 'flat') {
+                    tarifLembur = pegawai.jabatan?.upah_lembur_flat || pegawai.jabatan?.upah_lembur_per_jam || 0;
+                } else {
+                    tarifLembur = pegawai.jabatan?.upah_lembur_per_jam || 0;
+                }
             }
-            
-            // Hitung upah akhir menggunakan tarif yang terpilih
-            upahLembur = jamLembur * tarifLemburPerJam;
+
+            if (menitLemburDiakui > 0) {
+                if (tipeHitung === 'flat') {
+                    // Jika Flat, berikan nominal upah flat penuh selama ada menit lembur diakui
+                    upahLembur = tarifLembur;
+                } else {
+                    // Jika Per Jam, hitung proporsional berdasarkan jam lembur diakui
+                    const jamLembur = Math.floor(menitLemburDiakui / 60); 
+                    upahLembur = jamLembur * tarifLembur;
+                }
+            }
             // =============================================================
         }
     }

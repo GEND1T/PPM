@@ -197,12 +197,16 @@ const generateGajiMassal = async (req, res) => {
             { data: allRecordTHR, error: errTHR }
         ] = await Promise.all([
             // 2.1 Cek status penggajian yang sudah ada untuk periode ini
-            supabase
-                .from('penggajian')
-                .select('pegawai_id, status_pembayaran')
-                .eq('periode_bulan', periode_bulan)
-                .eq('periode_tahun', periode_tahun)
-                .in('pegawai_id', pegawaiIds),
+            (() => {
+                let q = supabase
+                    .from('penggajian')
+                    .select('pegawai_id, status_pembayaran, tanggal_awal_periode, tanggal_akhir_periode')
+                    .in('pegawai_id', pegawaiIds);
+                if (tanggal_mulai && tanggal_selesai) {
+                    return q.gte('tanggal_awal_periode', tanggal_mulai).lte('tanggal_akhir_periode', tanggal_selesai);
+                }
+                return q.eq('periode_bulan', periode_bulan).eq('periode_tahun', periode_tahun);
+            })(),
 
             // 2.2 Data Target Harian
             supabase
@@ -687,7 +691,7 @@ const pelunasanGaji = async (req, res) => {
 
 const getRekapGaji = async (req, res) => {
     try {
-        const { tahun, bulan } = req.query;
+        const { tahun, bulan, tanggal_mulai, tanggal_selesai } = req.query;
 
         // 1. Validasi Parameter Wajib
         if (!tahun) {
@@ -730,8 +734,12 @@ const getRekapGaji = async (req, res) => {
         // 3. Terapkan Filter Berdasarkan Request Frontend
         query = query.eq('periode_tahun', tahun);
         
-        // Jika bulan dikirim (dan bukan 0), maka filter berdasarkan bulan
-        if (bulan && bulan !== '0') {
+        // Filter berdasarkan tanggal mulai & tanggal selesai jika ada (misal filter mingguan)
+        if (tanggal_mulai && tanggal_selesai) {
+            query = query
+                .gte('tanggal_awal_periode', tanggal_mulai)
+                .lte('tanggal_akhir_periode', tanggal_selesai);
+        } else if (bulan && bulan !== '0') {
             query = query.eq('periode_bulan', bulan);
         }
 

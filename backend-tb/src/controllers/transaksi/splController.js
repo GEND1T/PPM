@@ -5,15 +5,16 @@ const supabase = require('../../config/supabaseClient');
 // ==========================================
 const createSPL = async (req, res) => {
     try {
-        // 1. Tambahkan is_custom_upah dan nominal_upah_custom ke destructuring req.body
+        // 1. Tambahkan is_custom_upah, nominal_upah_custom, dan tipe_hitung_lembur ke destructuring req.body
         const { 
             pegawai_id, 
             tanggal, 
             menit_lembur_diizinkan, 
             alasan_lembur, 
             disetujui_oleh,
-            is_custom_upah,         // <-- BARU
-            nominal_upah_custom     // <-- BARU
+            is_custom_upah,
+            nominal_upah_custom,
+            tipe_hitung_lembur
         } = req.body;
 
         // Validasi input dasar
@@ -36,7 +37,8 @@ const createSPL = async (req, res) => {
                 
                 // Tambahkan field custom upah (Gunakan fallback ke false/0 jika kosong)
                 is_custom_upah: is_custom_upah || false,
-                nominal_upah_custom: is_custom_upah ? (nominal_upah_custom || 0) : 0
+                nominal_upah_custom: is_custom_upah ? (nominal_upah_custom || 0) : 0,
+                tipe_hitung_lembur: tipe_hitung_lembur || 'per_jam'
             }, { onConflict: 'pegawai_id, tanggal' }) 
             .select()
             .single();
@@ -76,10 +78,17 @@ const getSPL = async (req, res) => {
                 menit_lembur_diizinkan,
                 alasan_lembur,
                 disetujui_oleh,
+                is_custom_upah,
+                nominal_upah_custom,
+                tipe_hitung_lembur,
                 created_at,
                 pegawai (
                     nama,
-                    jabatan (nama_jabatan)
+                    jabatan (
+                        nama_jabatan,
+                        upah_lembur_per_jam,
+                        upah_lembur_flat
+                    )
                 )
             `)
             .order('tanggal', { ascending: false }); // Urutkan dari yang terbaru
@@ -120,7 +129,11 @@ const getSPL = async (req, res) => {
             jam_lembur_estimasi: (item.menit_lembur_diizinkan / 60).toFixed(1), // Konversi bantu untuk UI
             alasan_lembur: item.alasan_lembur || '-',
             disetujui_oleh: item.disetujui_oleh || '-',
-            created_at: item.created_at
+            is_custom_upah: item.is_custom_upah || false,
+            nominal_upah_custom: item.nominal_upah_custom || 0,
+            tipe_hitung_lembur: item.tipe_hitung_lembur || 'per_jam',
+            created_at: item.created_at,
+            pegawai: item.pegawai
         }));
 
         return res.status(200).json({ 
@@ -150,7 +163,9 @@ const getAllSPL = async (req, res) => {
                 pegawai (
                     nama,
                     jabatan (
-                        upah_lembur_per_jam
+                        nama_jabatan,
+                        upah_lembur_per_jam,
+                        upah_lembur_flat
                     )
                 )
             `)

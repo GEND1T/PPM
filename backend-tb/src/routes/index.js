@@ -17,6 +17,7 @@ const splRoutes = require('./transaksi/splRoutes');
 const targetRoutes = require('./transaksi/targetRoutes');
 const kasbonRoutes = require('./transaksi/kasbonRoutes');
 const bonusCustomRoutes = require('./transaksi/bonuscustomRoutes');
+const potonganCustomRoutes = require('./transaksi/potongancustomRoutes');
 const polaRotasiRoutes = require('./master/polaRotasiRoutes');
 
 
@@ -33,6 +34,7 @@ router.use('/lembur', verifikasiToken, splRoutes);
 router.use('/target', verifikasiToken, targetRoutes);
 router.use('/kasbon', verifikasiToken, kasbonRoutes);
 router.use('/bonus-custom', verifikasiToken, bonusCustomRoutes);
+router.use('/potongan-custom', verifikasiToken, potonganCustomRoutes);
 router.use('/pola-rotasi', verifikasiToken, polaRotasiRoutes);
 
 module.exports = router;

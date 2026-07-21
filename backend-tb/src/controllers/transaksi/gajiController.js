@@ -193,6 +193,7 @@ const generateGajiMassal = async (req, res) => {
             { data: allAbsenData, error: errAbsen },
             { data: allKasbonData, error: errKasbon },
             { data: allBonusCustomData, error: errBonusCustom },
+            { data: allPotonganCustomData, error: errPotonganCustom },
             { data: allTierMasaKerja, error: errTier },
             { data: allRecordTHR, error: errTHR }
         ] = await Promise.all([
@@ -242,6 +243,14 @@ const generateGajiMassal = async (req, res) => {
                 .gte('tanggal_diberikan', tanggal_mulai)
                 .lte('tanggal_diberikan', tanggal_selesai),
 
+            // 2.5b Data Potongan Custom
+            supabase
+                .from('potongan_custom_pegawai')
+                .select('pegawai_id, keterangan, nominal')
+                .in('pegawai_id', pegawaiIds)
+                .gte('tanggal_diberikan', tanggal_mulai)
+                .lte('tanggal_diberikan', tanggal_selesai),
+
             // 2.6 Data Tier Masa Kerja (diurutkan minimal_tahun descending)
             supabase
                 .from('tier_tunjangan_masa_kerja')
@@ -261,6 +270,7 @@ const generateGajiMassal = async (req, res) => {
         if (errAbsen) throw errAbsen;
         if (errKasbon) throw errKasbon;
         if (errBonusCustom) throw errBonusCustom;
+        if (errPotonganCustom) throw errPotonganCustom;
         if (errTier) throw errTier;
         if (errTHR) throw errTHR;
 
@@ -279,6 +289,7 @@ const generateGajiMassal = async (req, res) => {
         const absenMap = groupByPegawai(allAbsenData);
         const kasbonMap = groupByPegawai(allKasbonData);
         const bonusCustomMap = groupByPegawai(allBonusCustomData);
+        const potonganCustomMap = groupByPegawai(allPotonganCustomData);
         const thrMap = (allRecordTHR || []).reduce((acc, item) => {
             acc[item.pegawai_id] = item;
             return acc;
@@ -467,14 +478,31 @@ const generateGajiMassal = async (req, res) => {
                     }
                 }
 
+                // Prioritas 3: Potongan Custom
+                const daftarPotonganCustom = potonganCustomMap[pegawai.id] || [];
+                let totalPotonganCustom = 0;
+                let detailPotonganCustom = [];
+
+                if (daftarPotonganCustom.length > 0) {
+                    for (const potongan of daftarPotonganCustom) {
+                        totalPotonganCustom += Number(potongan.nominal);
+                        detailPotonganCustom.push({
+                            keterangan: potongan.keterangan,
+                            nominal: Number(potongan.nominal)
+                        });
+                    }
+                }
+
                 const rincianPotongan = {
                     denda_sistem_absensi: dendaSistemPeriodeIni,
                     denda_alpha_void: dendaAlphaVoid,
                     potongan_kasbon: totalPotonganKasbon,
-                    detail_kasbon: detailKasbonTerpotong
+                    detail_kasbon: detailKasbonTerpotong,
+                    total_potongan_custom: totalPotonganCustom,
+                    detail_potongan_custom: detailPotonganCustom
                 };
 
-                const totalPotonganCair = dendaTotal + totalPotonganKasbon;
+                const totalPotonganCair = dendaTotal + totalPotonganKasbon + totalPotonganCustom;
                 let gajiBersih = Math.max(0, gajiKotor - totalPotonganCair);
 
                 // K. TABUNGAN LOYALITAS & THR

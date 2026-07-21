@@ -44,4 +44,23 @@ const deleteBonusCustom = async (req, res) => {
     }
 };
 
-module.exports = { getBonusCustom, createBonusCustom, deleteBonusCustom };
+const updateBonusCustom = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { pegawai_id, tanggal_diberikan, keterangan, nominal } = req.body;
+        if (!id || !pegawai_id || !tanggal_diberikan || !keterangan || !nominal) {
+            return res.status(400).json({ success: false, message: 'Semua kolom wajib diisi.' });
+        }
+
+        const { error } = await supabase.from('bonus_custom_pegawai').update({
+            pegawai_id, tanggal_diberikan, keterangan, nominal
+        }).eq('id', id);
+
+        if (error) throw error;
+        return res.status(200).json({ success: true, message: 'Bonus berhasil diperbarui.' });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Gagal memperbarui bonus.' });
+    }
+};
+
+module.exports = { getBonusCustom, createBonusCustom, updateBonusCustom, deleteBonusCustom };

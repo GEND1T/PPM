@@ -238,7 +238,7 @@ const generateGajiMassal = async (req, res) => {
             // 2.5 Data Bonus Custom
             supabase
                 .from('bonus_custom_pegawai')
-                .select('pegawai_id, keterangan, nominal')
+                .select('id, pegawai_id, tanggal_diberikan, keterangan, nominal')
                 .in('pegawai_id', pegawaiIds)
                 .gte('tanggal_diberikan', tanggal_mulai)
                 .lte('tanggal_diberikan', tanggal_selesai),
@@ -246,7 +246,7 @@ const generateGajiMassal = async (req, res) => {
             // 2.5b Data Potongan Custom
             supabase
                 .from('potongan_custom_pegawai')
-                .select('pegawai_id, keterangan, nominal')
+                .select('id, pegawai_id, tanggal_diberikan, keterangan, nominal')
                 .in('pegawai_id', pegawaiIds)
                 .gte('tanggal_diberikan', tanggal_mulai)
                 .lte('tanggal_diberikan', tanggal_selesai),
@@ -342,6 +342,13 @@ const generateGajiMassal = async (req, res) => {
                     throw new Error('Tidak ada data kehadiran/target (Dilewati).');
                 }
 
+                // H. BONUS & POTONGAN CUSTOM MAP FOR PEGAWAI
+                const daftarBonusCustom = bonusCustomMap[pegawai.id] || [];
+                const daftarPotonganCustom = potonganCustomMap[pegawai.id] || [];
+
+                const processedBonusDates = new Set();
+                const processedPotonganDates = new Set();
+
                 // VARIABEL AGGREGATOR
                 let bonusDisiplinPeriodeIni = 0;
                 let bonusKerapianPeriodeIni = 0;
@@ -370,16 +377,34 @@ const generateGajiMassal = async (req, res) => {
                             uangLemburPeriodeIni += (absen.upah_lembur || 0);
                             dendaSistemPeriodeIni += (absen.denda || 0);
 
+                            let bCustomHariIni = 0;
+                            if (!processedBonusDates.has(absen.tanggal)) {
+                                bCustomHariIni = daftarBonusCustom
+                                    .filter(b => b.tanggal_diberikan === absen.tanggal)
+                                    .reduce((sum, b) => sum + Number(b.nominal || 0), 0);
+                                if (bCustomHariIni > 0) processedBonusDates.add(absen.tanggal);
+                            }
+
+                            let pCustomHariIni = 0;
+                            if (!processedPotonganDates.has(absen.tanggal)) {
+                                pCustomHariIni = daftarPotonganCustom
+                                    .filter(p => p.tanggal_diberikan === absen.tanggal)
+                                    .reduce((sum, p) => sum + Number(p.nominal || 0), 0);
+                                if (pCustomHariIni > 0) processedPotonganDates.add(absen.tanggal);
+                            }
+
                             if (isHarian) {
-                                const totalHarian = (absen.upah_harian || 0) + (absen.bonus_kedisiplinan || 0) + (absen.bonus_kerapian || 0) + (absen.upah_lembur || 0);
+                                const totalHarian = (absen.upah_harian || 0) + (absen.bonus_kedisiplinan || 0) + (absen.bonus_kerapian || 0) + (absen.upah_lembur || 0) + bCustomHariIni - pCustomHariIni;
                                 arrayDetailHarian.push({
                                     hari_tanggal: getNamaHari(absen.tanggal),
+                                    tanggal: absen.tanggal,
                                     gaji_kehadiran: absen.upah_harian || 0,
                                     t_absensi: absen.bonus_kedisiplinan || 0,
                                     t_kerapian: absen.bonus_kerapian || 0,
                                     sortir: 0,
                                     lembur: absen.upah_lembur || 0,
-                                    bonus: 0,
+                                    bonus_custom: bCustomHariIni,
+                                    potongan_custom: pCustomHariIni,
                                     total_harian: totalHarian
                                 });
                             }
@@ -398,8 +423,25 @@ const generateGajiMassal = async (req, res) => {
                         const tKrp = absenHariIni.bonus_kerapian || 0;
                         const lembur = absenHariIni.upah_lembur || 0;
 
+                        let bCustomHariIni = 0;
+                        if (!processedBonusDates.has(tgl)) {
+                            bCustomHariIni = daftarBonusCustom
+                                .filter(b => b.tanggal_diberikan === tgl)
+                                .reduce((sum, b) => sum + Number(b.nominal || 0), 0);
+                            if (bCustomHariIni > 0) processedBonusDates.add(tgl);
+                        }
+
+                        let pCustomHariIni = 0;
+                        if (!processedPotonganDates.has(tgl)) {
+                            pCustomHariIni = daftarPotonganCustom
+                                .filter(p => p.tanggal_diberikan === tgl)
+                                .reduce((sum, p) => sum + Number(p.nominal || 0), 0);
+                            if (pCustomHariIni > 0) processedPotonganDates.add(tgl);
+                        }
+
                         arrayDetailHarian.push({
                             hari_tanggal: getNamaHari(tgl),
+                            tanggal: tgl,
                             nama_target: target.master_target?.nama_target || '-',
                             harga_satuan: target.master_target?.harga_satuan || 0,
                             capaian: target.jumlah_pencapaian || 0,
@@ -407,8 +449,9 @@ const generateGajiMassal = async (req, res) => {
                             t_kerapian: tKrp,
                             lembur: lembur,
                             sortir: 0,
-                            bonus: 0,
-                            total_harian: nominalRiil + tAbs + tKrp + lembur
+                            bonus_custom: bCustomHariIni,
+                            potongan_custom: pCustomHariIni,
+                            total_harian: nominalRiil + tAbs + tKrp + lembur + bCustomHariIni - pCustomHariIni
                         });
                     }
                 }
@@ -420,7 +463,6 @@ const generateGajiMassal = async (req, res) => {
                 else if (totalHariHadir >= 6) bonusKehadiranMingguan = aturanJabatan.bonus_minggu_6_hari || 0;
 
                 // H. BONUS CUSTOM
-                const daftarBonusCustom = bonusCustomMap[pegawai.id] || [];
                 let totalBonusCustom = 0;
                 let detailBonusCustom = [];
 
@@ -428,6 +470,9 @@ const generateGajiMassal = async (req, res) => {
                     for (const bonus of daftarBonusCustom) {
                         totalBonusCustom += Number(bonus.nominal);
                         detailBonusCustom.push({
+                            id: bonus.id,
+                            tanggal: bonus.tanggal_diberikan,
+                            hari_tanggal: getNamaHari(bonus.tanggal_diberikan),
                             keterangan: bonus.keterangan,
                             nominal: Number(bonus.nominal)
                         });
@@ -479,7 +524,6 @@ const generateGajiMassal = async (req, res) => {
                 }
 
                 // Prioritas 3: Potongan Custom
-                const daftarPotonganCustom = potonganCustomMap[pegawai.id] || [];
                 let totalPotonganCustom = 0;
                 let detailPotonganCustom = [];
 
@@ -487,6 +531,9 @@ const generateGajiMassal = async (req, res) => {
                     for (const potongan of daftarPotonganCustom) {
                         totalPotonganCustom += Number(potongan.nominal);
                         detailPotonganCustom.push({
+                            id: potongan.id,
+                            tanggal: potongan.tanggal_diberikan,
+                            hari_tanggal: getNamaHari(potongan.tanggal_diberikan),
                             keterangan: potongan.keterangan,
                             nominal: Number(potongan.nominal)
                         });

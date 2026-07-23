@@ -801,9 +801,7 @@ const getRekapGaji = async (req, res) => {
                     jabatan (
                         nama_jabatan,
                         tipe_penggajian,
-                        departemen (
-                            nama_departemen
-                        )
+                        departemen (nama_departemen)
                     )
                 )
             `)

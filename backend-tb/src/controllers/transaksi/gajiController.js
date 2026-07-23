@@ -12,7 +12,7 @@ const getAllGaji = async (req, res) => {
             .select(`
                 id, periode_bulan, periode_tahun, 
                 gaji_dasar, total_bonus, total_potongan, total_gaji, status_pembayaran,
-                pegawai!inner (nama, jabatan (nama_jabatan))
+                pegawai!inner (nama, jabatan (nama_jabatan, departemen (nama_departemen)))
             `)
             .order('periode_tahun', { ascending: false })
             .order('periode_bulan', { ascending: false });
@@ -53,7 +53,7 @@ const getRekapHarian = async (req, res) => {
             .select(`
                 id, tanggal, status,
                 upah_harian, bonus_kedisiplinan, bonus_kerapian, upah_lembur, denda,
-                pegawai!inner (nama, jabatan (nama_jabatan))
+                pegawai!inner (nama, jabatan (nama_jabatan, departemen (nama_departemen)))
             `)
             .eq('tanggal', tanggal);
 
@@ -120,7 +120,7 @@ const getRekapMingguan = async (req, res) => {
                 total_hari_hadir, total_gaji_pokok_mingguan, 
                 total_bonus_kerapian_mingguan, total_bonus_disiplin_mingguan, 
                 total_denda_mingguan, total_pendapatan_bersih_mingguan,
-                pegawai (nama, jabatan (nama_jabatan))
+                pegawai (nama, jabatan (nama_jabatan, departemen (nama_departemen)))
             `)
             .order('tanggal_akhir', { ascending: false });
 

@@ -69,7 +69,7 @@ const createAbsenManual = async (req, res) => {
         // ==========================================================
         let tanggal = req.body.tanggal;
         if (!tanggal || tanggal.trim() === "") {
-            tanggal = new Date().toLocaleDateString('en-CA'); // Hasil: "2026-06-14" (Tergantung hari ini)
+            tanggal = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
         }
 
         // Validasi input dasar (Hanya wajibkan pegawai_id dan pin_mesin)
@@ -172,7 +172,7 @@ const simulasiLogMesin = async (req, res) => {
 
             // Mode 2A: Mode Auto-Generate Simulasi per Tanggal
             if (mode === 'auto') {
-                const tglSimulasi = tanggal || new Date().toLocaleDateString('en-CA');
+                const tglSimulasi = tanggal || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
                 
                 const { data: listJadwal, error: errJadwal } = await supabase
                     .from('jadwal_karyawan')
@@ -221,7 +221,7 @@ const simulasiLogMesin = async (req, res) => {
             // Mode 2C: Single Log JSON Object
             else if (pin_mesin || req.body.pinMesin) {
                 const pin = pin_mesin || req.body.pinMesin;
-                const tgl = tanggal || new Date().toLocaleDateString('en-CA');
+                const tgl = tanggal || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
                 logsToProcess.push({
                     pinMesin: String(pin),
                     tanggal: tgl,

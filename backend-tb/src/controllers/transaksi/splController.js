@@ -153,7 +153,7 @@ const getSPL = async (req, res) => {
 // ambil semua data spl saat ini dan yang akan datang
 const getAllSPL = async (req, res) => {
     try {
-        const today = new Date().toISOString().split('T')[0]; // Format YYYY-MM-DD
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
         
         const { data, error } = await supabase
             .from('otorisasi_lembur')

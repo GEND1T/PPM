@@ -711,7 +711,7 @@ const pelunasanGaji = async (req, res) => {
                             console.error(`[ERROR KASBON] Gagal update Kasbon ID ${item.kasbon_id}:`, errUpdateKasbon.message);
                         } else {
                             // Catat ke riwayat_pembayaran_kasbon
-                            const todayStr = new Date().toLocaleDateString('en-CA');
+                            const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
                             await supabase
                                 .from('riwayat_pembayaran_kasbon')
                                 .insert([{

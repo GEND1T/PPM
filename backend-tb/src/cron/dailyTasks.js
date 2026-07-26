@@ -7,8 +7,8 @@ const supabase = require('../config/supabaseClient');
 async function prosesPenaltiLupaPulang() {
     console.log('⏳ [CRON] Menjalankan pengecekan Lupa Pulang...');
 
-    // Dapatkan tanggal hari ini dengan format YYYY-MM-DD (Waktu Lokal)
-    const today = new Date().toLocaleDateString('en-CA'); 
+    // Dapatkan tanggal hari ini dengan format YYYY-MM-DD (Waktu Lokal WIB)
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }); 
 
     try {
         // 1. Cari semua absen hari ini yang belum ada waktu kepulangannya (masih menggantung)

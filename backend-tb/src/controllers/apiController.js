@@ -150,9 +150,8 @@ const voidAbsensi = async (req, res) => {
 // ==========================================
 const getLiveDashboard = async (req, res) => {
     try {
-        // Ambil tanggal hari ini (Waktu Lokal server/WIB)
-        // Catatan: Jika server menggunakan UTC, pastikan formatnya sudah diubah ke zona waktu lokal perusahaan
-        const today = new Date().toLocaleDateString('en-CA'); 
+        // Ambil tanggal hari ini (Waktu Lokal WIB / Asia/Jakarta)
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }); 
 
         // 1. Tarik semua data pegawai aktif beserta nama jabatannya
         const { data: listPegawai, error: errPegawai } = await supabase

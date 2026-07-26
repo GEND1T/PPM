@@ -11,8 +11,8 @@ async function prosesRekapMingguan() {
     const pastWeek = new Date();
     pastWeek.setDate(today.getDate() - 6);
 
-    const endDate = today.toLocaleDateString('en-CA'); // Format: YYYY-MM-DD
-    const startDate = pastWeek.toLocaleDateString('en-CA');
+    const endDate = today.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }); // Format: YYYY-MM-DD
+    const startDate = pastWeek.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
     const tahunIni = today.getFullYear();
 
     try {

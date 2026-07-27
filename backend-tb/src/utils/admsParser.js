@@ -33,4 +33,32 @@ function timeToMinutes(timeStr) {
     return (hours * 60) + minutes;
 }
 
-module.exports = { parseAdmsLog, timeToMinutes };
+// Fungsi bantuan untuk menggeser tanggal & jam berdasarkan offset menit (+/-)
+function adjustLogTime(tanggalStr, jamStr, offsetMenit) {
+    if (!offsetMenit || isNaN(Number(offsetMenit))) {
+        return { tanggal: tanggalStr, jam: jamStr };
+    }
+    const offset = Number(offsetMenit);
+    if (offset === 0) return { tanggal: tanggalStr, jam: jamStr };
+
+    const [year, month, day] = tanggalStr.split('-').map(Number);
+    const [hours, minutes, seconds] = jamStr.split(':').map(Number);
+
+    const dt = new Date(year, month - 1, day, hours, minutes, seconds || 0);
+    dt.setMinutes(dt.getMinutes() + offset);
+
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const d = String(dt.getDate()).padStart(2, '0');
+
+    const hh = String(dt.getHours()).padStart(2, '0');
+    const mm = String(dt.getMinutes()).padStart(2, '0');
+    const ss = String(dt.getSeconds()).padStart(2, '0');
+
+    return {
+        tanggal: `${y}-${m}-${d}`,
+        jam: `${hh}:${mm}:${ss}`
+    };
+}
+
+module.exports = { parseAdmsLog, timeToMinutes, adjustLogTime };

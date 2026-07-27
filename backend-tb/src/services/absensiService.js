@@ -1,11 +1,11 @@
 // File: src/services/absensiService.js
 
 const supabase = require('../config/supabaseClient');
-const { timeToMinutes } = require('../utils/admsParser');
+const { timeToMinutes, adjustLogTime } = require('../utils/admsParser');
+const { getOffsetMesinInternal } = require('../controllers/master/pengaturanController');
 
 async function prosesLogMesin(log) {
     const { pinMesin, tanggal, jam, state } = log;
-    const menitScan = timeToMinutes(jam);
 
     // 1. Simpan selalu data mentah (Sebagai Blackbox/Bukti)
     await supabase.from('log_mesin_absensi').insert({
@@ -14,7 +14,16 @@ async function prosesLogMesin(log) {
         punch_state: state
     });
 
-    // 2. Cari Data Pegawai Dasar (Untuk Upah & Bonus)
+    // 2. Ambil offset pengaturan waktu mesin & sesuaikan waktu scan
+    const offsetMenit = await getOffsetMesinInternal();
+    const { tanggal: adjustedTanggal, jam: adjustedJam } = adjustLogTime(tanggal, jam, offsetMenit);
+    const menitScan = timeToMinutes(adjustedJam);
+
+    if (offsetMenit !== 0) {
+        console.log(`[OFFSET MESIN] Raw (${tanggal} ${jam}) + ${offsetMenit}m -> Disesuaikan: (${adjustedTanggal} ${adjustedJam})`);
+    }
+
+    // 3. Cari Data Pegawai Dasar (Untuk Upah & Bonus)
     const { data: pegawai, error: errPegawai } = await supabase
         .from('pegawai')
         .select('id, jabatan(upah_per_kehadiran, bonus_disiplin_harian, upah_lembur_per_jam, upah_lembur_flat)')
@@ -33,11 +42,11 @@ async function prosesLogMesin(log) {
         .from('jadwal_karyawan')
         .select('shift_id')
         .eq('pegawai_id', pegawai.id)
-        .eq('tanggal', tanggal)
+        .eq('tanggal', adjustedTanggal)
         .maybeSingle();
 
     if (errJadwal || !jadwalHariIni || !jadwalHariIni.shift_id) {
-        console.log(`[INFO] Scan diabaikan. Pegawai PIN ${pinMesin} tidak memiliki jadwal shift (OFF) pada ${tanggal}.`);
+        console.log(`[INFO] Scan diabaikan. Pegawai PIN ${pinMesin} tidak memiliki jadwal shift (OFF) pada ${adjustedTanggal}.`);
         return; 
     }
 
@@ -49,12 +58,12 @@ async function prosesLogMesin(log) {
 
     if (!shift) return;
 
-    // 3. Cek apakah pegawai sudah melakukan absensi (scan masuk) hari ini
+    // 4. Cek apakah pegawai sudah melakukan absensi (scan masuk) hari ini
     const { data: absenHariIni, error: errAbsen } = await supabase
         .from('absensi')
         .select('*')
         .eq('pegawai_id', pegawai.id)
-        .eq('tanggal', tanggal)
+        .eq('tanggal', adjustedTanggal)
         .maybeSingle(); 
 
     const targetMasuk = timeToMinutes(shift.jam_masuk);
@@ -101,9 +110,9 @@ async function prosesLogMesin(log) {
 
         const { error: insertError } = await supabase.from('absensi').insert({
             pegawai_id: pegawai.id,
-            tanggal: tanggal,
+            tanggal: adjustedTanggal,
             shift_id: shift.id, 
-            waktu_awal: jam,
+            waktu_awal: adjustedJam,
             status: statusMasuk,
             upah_harian: pegawai.jabatan?.upah_per_kehadiran || 0, 
             bonus_kedisiplinan: bonusDisiplin,
@@ -128,7 +137,7 @@ async function prosesLogMesin(log) {
         .from('otorisasi_lembur')
         .select('menit_lembur_diizinkan, is_custom_upah, nominal_upah_custom, tipe_hitung_lembur') 
         .eq('pegawai_id', pegawai.id)
-        .eq('tanggal', tanggal)
+        .eq('tanggal', adjustedTanggal)
         .maybeSingle();
 
     // 2. TENTUKAN CUT-OFF DINAMIS
@@ -227,7 +236,7 @@ async function prosesLogMesin(log) {
 
     // 5. UPDATE DATABASE ABSENSI
     const { error: updateError } = await supabase.from('absensi').update({
-        waktu_akhir: jam,
+        waktu_akhir: adjustedJam,
         status: statusAkhir,
         bonus_kedisiplinan: bonusKedisiplinanAkhir,
         denda: dendaHariIni, 

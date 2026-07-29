@@ -9,7 +9,7 @@ const port = process.env.PORT || 3000;
 
 // Middleware agar Express bisa membaca data JSON dan raw text
 app.use(express.json()); 
-app.use(express.text()); // Sangat penting untuk menerima data mentah dari mesin ADMS
+app.use(express.text({ type: '*/*' })); // Menerima data mentah dari mesin ADMS apapun Content-Type header yang dikirim mesin
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 

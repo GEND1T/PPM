@@ -4,18 +4,20 @@ const supabase = require('../config/supabaseClient');
 const { timeToMinutes, adjustLogTime } = require('../utils/admsParser');
 const { getOffsetMesinInternal } = require('../controllers/master/pengaturanController');
 
-async function prosesLogMesin(log) {
+async function prosesLogMesin(log, skipRawInsert = false, preloadedOffset = null) {
     const { pinMesin, tanggal, jam, state } = log;
 
-    // 1. Simpan selalu data mentah (Sebagai Blackbox/Bukti)
-    await supabase.from('log_mesin_absensi').insert({
-        pin_mesin_mentah: pinMesin,
-        waktu_scan: `${tanggal} ${jam}`,
-        punch_state: state
-    });
+    // 1. Simpan data mentah jika tidak diset skipRawInsert (misal saat bulk insert dari ADMS controller)
+    if (!skipRawInsert) {
+        await supabase.from('log_mesin_absensi').insert({
+            pin_mesin_mentah: pinMesin,
+            waktu_scan: `${tanggal} ${jam}`,
+            punch_state: state
+        });
+    }
 
     // 2. Ambil offset pengaturan waktu mesin & sesuaikan waktu scan
-    const offsetMenit = await getOffsetMesinInternal();
+    const offsetMenit = preloadedOffset !== null ? preloadedOffset : await getOffsetMesinInternal();
     const { tanggal: adjustedTanggal, jam: adjustedJam } = adjustLogTime(tanggal, jam, offsetMenit);
     const menitScan = timeToMinutes(adjustedJam);
 

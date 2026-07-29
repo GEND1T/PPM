@@ -1,26 +1,37 @@
 // File: src/utils/admsParser.js
 
 function parseAdmsLog(rawText) {
-    // Pisahkan teks berdasarkan baris baru (enter)
-    const lines = rawText.trim().split('\n');
+    if (!rawText || typeof rawText !== 'string') return [];
+
+    // Pisahkan teks berdasarkan baris baru (support Windows \r\n & Unix \n)
+    const lines = rawText.trim().split(/\r?\n/);
     const parsedData = [];
 
     for (let line of lines) {
-        // Abaikan baris kosong
-        if (!line.trim()) continue;
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        // Abaikan header tabel ADMS/ZK (contoh: "table=ATTLOG", "Stamp=123", dsb)
+        if (trimmed.startsWith('table=') || trimmed.startsWith('Stamp=') || trimmed.startsWith('USER')) continue;
 
         // Pisahkan teks berdasarkan spasi atau tab
-        const parts = line.trim().split(/\s+/);
+        const parts = trimmed.split(/\s+/);
         
-        // Asumsi format mesin Solution: PIN_MESIN TANGGAL JAM STATE VERIFICATION
-        // Contoh: "101 2026-04-11 05:05:00 0 1"
+        // Format mesin Solution: PIN_MESIN TANGGAL JAM STATE VERIFICATION
+        // Contoh: "101 2026-04-11 05:05:00 0 1" atau "101\t2026-04-11 05:05:00\t0\t1"
         if (parts.length >= 3) {
-            parsedData.push({
-                pinMesin: parts[0],
-                tanggal: parts[1], // "2026-04-11"
-                jam: parts[2],     // "05:05:00"
-                state: parts[3] || '0'
-            });
+            const tanggalStr = parts[1];
+            const jamStr = parts[2];
+
+            // Validasi format tanggal YYYY-MM-DD
+            if (/^\d{4}-\d{2}-\d{2}$/.test(tanggalStr)) {
+                parsedData.push({
+                    pinMesin: parts[0],
+                    tanggal: tanggalStr, // "2026-04-11"
+                    jam: jamStr,         // "05:05:00"
+                    state: parts[3] || '0'
+                });
+            }
         }
     }
     return parsedData;

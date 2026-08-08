@@ -7,14 +7,19 @@ const getAllAbsen = async (req, res) => {
         const { data, error } = await supabase
             .from('absensi')
             .select(`
-                id, tanggal, waktu_awal, waktu_akhir, status, status_lembur,
+                id, tanggal, waktu_awal, waktu_akhir, status, menit_lembur_diakui, upah_lembur,
                 pegawai (id, nama, jabatan (nama_jabatan))
             `)
             .order('tanggal', { ascending: false });
 
         if (error) throw error;
 
-        return res.status(200).json({ success: true, data });
+        const formattedData = (data || []).map(item => ({
+            ...item,
+            status_lembur: item.menit_lembur_diakui ? `${item.menit_lembur_diakui} Menit` : null
+        }));
+
+        return res.status(200).json({ success: true, data: formattedData });
     } catch (error) {
         console.error('Error getAllAbsen:', error.message);
         return res.status(500).json({ success: false, message: 'Gagal mengambil data absensi' });
@@ -25,7 +30,7 @@ const getAllAbsen = async (req, res) => {
 const updateAbsen = async (req, res) => {
     try {
         const { id } = req.params; // ID absensi dari URL parameter
-        const { status_masuk, status_lembur } = req.body; // Data yang dikirim dari React
+        const { status_masuk } = req.body; // Data yang dikirim dari React
 
         // Mapping kembali ke nilai database (misal: "Tepat" menjadi "intime", "Terlambat" menjadi "late")
         let statusDB = status_masuk;
@@ -36,8 +41,7 @@ const updateAbsen = async (req, res) => {
         const { data, error } = await supabase
             .from('absensi')
             .update({ 
-                status: statusDB, 
-                status_lembur: status_lembur 
+                status: statusDB 
             })
             .eq('id', id)
             .select()

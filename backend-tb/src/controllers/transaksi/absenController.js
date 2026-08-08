@@ -140,9 +140,11 @@ const createAbsenManual = async (req, res) => {
         }
 
         // 3. EKSEKUSI KE ENGINE ABSENSI SECARA BERURUTAN
+        // Catatan: Gunakan preloadedOffset = 0 agar jam absensi manual yang diinput HRD
+        // tersimpan presisi sesuai nilai jam yang diinput tanpa digeser lagi oleh offset mesin hardware.
         let successCount = 0;
         for (const log of logPayloads) {
-            await prosesLogMesin(log);
+            await prosesLogMesin(log, false, 0);
             successCount++;
         }
 
@@ -253,7 +255,7 @@ const simulasiLogMesin = async (req, res) => {
         const detailHasil = [];
 
         for (const log of logsToProcess) {
-            await prosesLogMesin(log);
+            await prosesLogMesin(log, false, 0);
             diproses++;
             detailHasil.push({
                 pin_mesin: log.pinMesin,
